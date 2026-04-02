@@ -1,0 +1,168 @@
+---
+title: "Kolmogorov-Arnold Networks - Aplicacion a LLMs"
+description: "Como aplicar KANs para LLMs de nueva generacion"
+---
+
+# Kolmogorov-Arnold Networks - Aplicacion a LLMs
+
+## Que aportan las KANs
+
+| Aporte | Descripcion | Relevancia LLM |
+|---|---|---|
+| Interpretabilidad | Funciones visibles en cada arista | Entender que aprende el modelo |
+| Eficiencia de parametros | Mejores scaling laws (teoria) | Modelos mas pequeños igualmente capaces |
+| Regresion simbolica | Extraer formulas aprendidas | Explicabilidad de razonamiento |
+| Funcion aprendible | Cada arista aprende su propia activacion | Representaciones mas ricas |
+
+## KAN como Reemplazo del FFN en Transformers
+
+En un Transformer estandar, cada bloque tiene:
+1. **Multi-Head Attention** (captura relaciones entre tokens)
+2. **FFN** (procesa cada token individualmente)
+
+El FFN es tipicamente:
+
+$$
+\text{FFN}(x) = W_2 \cdot \text{GELU}(W_1 x + b_1) + b_2
+$$
+
+con $W_1 \in \mathbb{R}^{d \times 4d}$ y $W_2 \in \mathbb{R}^{4d \times d}$.
+
+**Propuesta**: Reemplazar esto por KAN:
+
+$$
+\text{KAN-FFN}(x) = \sum_j \phi_{2,j}\left(\sum_i \phi_{1,i,j}(x_i)\right)
+$$
+
+### Ventajas teoricas:
+- Cada arista aprende la transformacion optima (no forzada a ser GELU)
+- Potencialmente necesita menos parametros
+- Interpretable: puedes ver que funcion aplica a cada dimension
+
+### Problemas practicos:
+- B-splines son **lentas** en GPU (no son GEMM puro)
+- Para $d=4096$ (dimension tipica de LLM), tienes $4096 \times 4 \times 4096$ aristas, cada una con $G+k$ parametros
+- El overhead es enorme vs multiplicacion matricial optimizada
+
+## El Problema de Escala
+
+### Calculo de parametros FFN vs KAN-FFN para un bloque:
+
+| | FFN (d=4096) | KAN-FFN (d=4096, G=5, k=3) |
+|---|---|---|
+| Parametros | $2 \times 4096 \times 16384 \approx 134M$ | $4096 \times 16384 \times 8 \approx 537M$ |
+| FLOPs | $2 \times 4096 \times 16384 \approx 134M$ | Mucho mas (evaluacion splines) |
+| Velocidad GPU | Optimizada (cuBLAS) | Lenta (custom kernels) |
+
+**Conclusion**: En su forma actual, KAN-FFN es ~4x mas parametros y ~10-50x mas lento que FFN estandar.
+
+## Variantes Prometedoras para LLMs
+
+### FourierKAN-FFN
+Reemplazar B-splines por Fourier reduce enormemente el overhead:
+
+$$
+\phi(x) = \sum_{k=0}^{K} a_k \cos(kx) + b_k \sin(kx)
+$$
+
+Las operaciones de Fourier son **altamente paralelizables** en GPU (FFT).
+
+### Low-Rank KAN
+Factorizar la matriz de funciones KAN:
+
+$$
+\Phi_{n_{out} \times n_{in}} \approx U_{n_{out} \times r} \cdot V_{r \times n_{in}}
+$$
+
+donde $r \ll \min(n_{in}, n_{out})$. Similar a LoRA pero para KANs.
+
+### KAN + LoRA: Fine-tuning eficiente
+
+```python
+class KANAdapter(nn.Module):
+    """KAN como adaptador tipo LoRA"""
+    def __init__(self, d_model, rank=8, grid_size=3):
+        super().__init__()
+        # Proyeccion down (lineal, rapida)
+        self.down = nn.Linear(d_model, rank, bias=False)
+        # KAN en espacio reducido (pocas dimensiones → KAN brilla)
+        self.kan = KANLinear(rank, rank, grid_size=grid_size)
+        # Proyeccion up (lineal, rapida)
+        self.up = nn.Linear(rank, d_model, bias=False)
+    
+    def forward(self, x):
+        return self.up(self.kan(self.down(x)))
+```
+
+**Idea**: KANs brillan con pocas dimensiones. Si proyectamos a un espacio de baja dimension, aplicamos KAN, y proyectamos de vuelta, obtenemos lo mejor de ambos mundos.
+
+## Donde encajarian en un LLM Hibrido
+
+### Opcion 1: KAN solo en las ultimas capas
+Las ultimas capas del LLM hacen la "decision final". Ahi la interpretabilidad de KAN es mas valiosa:
+
+```
+Capas 1-28: Standard Transformer (FFN normal)
+Capas 29-32: Transformer con KAN-FFN
+Output head: KAN (para entender la logica de prediccion)
+```
+
+### Opcion 2: KAN como output head
+Reemplazar la capa de proyeccion final:
+
+$$
+\text{logits} = \text{KAN}(h_{\text{final}}) \quad \text{en vez de} \quad \text{logits} = W \cdot h_{\text{final}}
+$$
+
+Ventaja: Puedes "ver" como el modelo mapea representaciones a tokens.
+
+### Opcion 3: KAN en espacios de baja dimension
+Dentro del modelo, donde las dimensiones son reducidas (adaptadores, gates, routing en MoE):
+
+```python
+# Router de Mixture of Experts con KAN
+class KANRouter(nn.Module):
+    def __init__(self, d_model, num_experts):
+        super().__init__()
+        # KAN para routing: d_model → num_experts
+        # pocas dimensiones de salida, KAN es viable
+        self.router = KANLinear(d_model, num_experts, grid_size=5)
+    
+    def forward(self, x):
+        return torch.softmax(self.router(x), dim=-1)
+```
+
+## Limitaciones Criticas para LLMs
+
+| Limitacion | Severidad | Posible solucion |
+|---|---|---|
+| Velocidad GPU | Critica | FourierKAN, kernels custom |
+| VRAM | Alta | Low-rank KAN |
+| Falta de CUDA optimizado | Alta | Comunidad trabajando en ello |
+| No probado > 1B params | Alta | Falta investigacion |
+| Datos ruidosos/discretos | Media | Los tokens son discretos, no ideales para splines |
+| Entrenamiento inestable a escala | Desconocida | No hay experiencia |
+
+## Tabla de Viabilidad
+
+| Dimension | Estado | Nota |
+|---|---|---|
+| Base teorica | Excelente | Teorema K-A es solido |
+| Implementacion | Buena (pykan, efficient-kan) | Pero no optimizada para LLMs |
+| Resultados en NLP | Muy limitados | Solo experimentos pequeños |
+| Escalabilidad LLM | No probada | El mayor riesgo |
+| Eficiencia de parametros | Buena en teoria | Se pierde con overhead de splines |
+| Velocidad | Mala (vs FFN) | 10-50x mas lento |
+| Interpretabilidad | Excelente | La razon principal de interes |
+| Timeline | 3-5 años | Para ser competitivo en LLMs |
+
+## Veredicto
+
+Las KANs **no van a reemplazar FFNs** en LLMs en el corto plazo. El overhead computacional es demasiado grande. Pero son valiosas en nichos especificos:
+
+1. **Fine-tuning interpretable** (KAN como adaptador en espacio reducido)
+2. **Output head** (entender la logica de prediccion final)
+3. **Routing en MoE** (pocas dimensiones, interpretabilidad valiosa)
+4. **Modelos pequeños** donde eficiencia de parametros importa mas que velocidad
+
+> Si estas construyendo un LLM de nueva generacion, **no uses KAN como backbone**. Usalas como **herramienta de interpretabilidad y eficiencia en componentes especificos** de baja dimension.

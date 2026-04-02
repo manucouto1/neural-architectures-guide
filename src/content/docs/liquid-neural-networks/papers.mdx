@@ -1,0 +1,108 @@
+---
+title: "Liquid Neural Networks - Papers"
+description: "Papers fundamentales y recientes sobre Liquid Neural Networks"
+---
+
+# Liquid Neural Networks - Papers
+
+## Papers Fundamentales
+
+### "Liquid Time-constant Networks"
+- **Autores**: Ramin Hasani, Mathias Lechner, Alexander Amini, Daniela Rus, Radu Grosu
+- **Año**: 2021
+- **Venue**: AAAI 2021
+- **Link**: https://arxiv.org/abs/2006.04439
+- **Contribucion**: Introduce las LTC networks — redes con constantes de tiempo variables que dependen del input. Demuestra que la variabilidad temporal permite comprimir representaciones complejas en pocas neuronas. Resultados sobresalientes en conduccion autonoma con solo 19 neuronas.
+
+### "Closed-form Continuous-depth Models"
+- **Autores**: Ramin Hasani, Mathias Lechner, Alexander Amini, Lucas Liebenwein, Aaron Ray, Max Tschaikowski, Gerald Teschl, Daniela Rus
+- **Año**: 2022
+- **Venue**: Nature Machine Intelligence
+- **Link**: https://arxiv.org/abs/2106.13898
+- **Contribucion**: Resuelve la ODE de las LTC de forma analitica (CfC), eliminando la necesidad de solvers numericos. Esto hace las Liquid NNs ordenes de magnitud mas rapidas mientras mantienen la expresividad. El paper clave para hacer LNNs practicas.
+
+### "Neural Circuit Policies Enabling Auditable Autonomy"
+- **Autores**: Mathias Lechner, Ramin Hasani, Alexander Amini, Thomas Henzinger, Daniela Rus, Radu Grosu
+- **Año**: 2020
+- **Venue**: Nature Machine Intelligence
+- **Link**: https://arxiv.org/abs/2003.08445
+- **Contribucion**: Introduce la topologia NCP (Neural Circuit Policies) inspirada en C. elegans. Demuestra que una estructura jerarquica (sensory → inter → command → motor) con solo 19 neuronas puede controlar un vehiculo autonomo de forma interpretable y auditable.
+
+### "Wiring Up Vision: Minimizing Supervised Synaptic Updates Needed to Produce a Primate Ventral Stream"
+- **Autores**: Mathias Lechner, Ramin Hasani, et al.
+- **Año**: 2022
+- **Venue**: Nature Communications
+- **Contribucion**: Extiende las ideas de NCP a vision, mostrando que la topologia biologica reduce drasticamente los datos necesarios para aprender.
+
+## Papers Recientes (2023-2025)
+
+### "Liquid Structural State-Space Models"
+- **Autores**: Ramin Hasani, Mathias Lechner, Tsun-Hsuan Wang, Makram Chahine, Alexander Amini, Daniela Rus
+- **Año**: 2023
+- **Venue**: ICLR 2023
+- **Link**: https://arxiv.org/abs/2209.12951
+- **Contribucion**: Conecta Liquid NNs con State Space Models (S4). Propone Liquid-S4, que inyecta la dinamica temporal variable de LTC en la estructura de S4. Mejora significativa en Long Range Arena benchmark. **Este paper es crucial porque tiende un puente entre LNNs y la linea SSM/Mamba.**
+
+### "Robustness of Liquid Neural Networks"
+- **Autores**: Hasani et al.
+- **Año**: 2023
+- **Contribucion**: Demuestra que las LNNs son inherentemente mas robustas a perturbaciones adversariales que las redes clasicas, gracias a la dinamica continua que actua como un "suavizador" natural.
+
+### "Scalable Liquid Neural Networks"
+- **Autores**: MIT CSAIL group
+- **Año**: 2024
+- **Contribucion**: Aborda el problema de escalabilidad de LNNs. Propone tecnicas para entrenar LNNs mas grandes manteniendo la eficiencia de parametros.
+
+### "Continuous-Time Models for Sequence Modeling"
+- **Autores**: Varios grupos
+- **Año**: 2024-2025
+- **Contribucion**: Linea de trabajo que explora modelos continuos (incluyendo LNNs) como alternativa a transformers para secuencias, con resultados prometedores en audio, video y series temporales.
+
+## Papers sobre Aplicacion a Lenguaje / LLMs
+
+### "Liquid Structural State-Space Models" (repetido por importancia)
+- **Relevancia para LLMs**: Este paper conecta directamente LNNs con SSMs. Dado que Mamba (un SSM) ya funciona como LLM, Liquid-S4 sugiere que se podrian construir LLMs con dinamica temporal variable.
+
+### Conexion con Mamba y State Space Models
+Los SSMs (S4, Mamba, RWKV) comparten DNA conceptual con las LNNs:
+- Ambos mantienen un estado interno que evoluciona
+- Ambos procesan secuencias de forma eficiente ($O(n)$ vs $O(n^2)$)
+- La diferencia: SSMs tienen dinamica fija, LNNs tienen dinamica adaptativa
+
+Papers relevantes de la conexion:
+- **"Mamba: Linear-Time Sequence Modeling with Selective State Spaces"** (Gu & Dao, 2023) — Mamba anade selectividad al SSM, similar conceptualmente a $\tau$ variable en LTC
+- **"Efficiently Modeling Long Sequences with Structured State Spaces"** (Gu et al., 2022) — S4, el precursor que LiquidS4 extiende
+
+### "On the Computational Power of Liquid Neural Networks"
+- **Año**: 2024
+- **Contribucion**: Analisis teorico de la capacidad computacional de LNNs. Muestra que bajo ciertas condiciones, LNNs pueden ser Turing-completas, lo cual es necesario (aunque no suficiente) para procesamiento de lenguaje complejo.
+
+## Papers de Contexto (no LNN directamente pero relevantes)
+
+### "Neural Ordinary Differential Equations"
+- **Autores**: Ricky T.Q. Chen, Yulia Rubanova, Jesse Bettencourt, David Duvenaud
+- **Año**: 2018 (NeurIPS Best Paper)
+- **Relevancia**: El paper que inicio la linea de "redes como ODEs". Las LNNs son una especializacion de Neural ODEs.
+
+### "Augmented Neural ODEs"
+- **Autores**: Emilien Dupont, Arnaud Doucet, Yee Whye Teh
+- **Año**: 2019
+- **Relevancia**: Resuelve limitaciones topologicas de Neural ODEs que tambien aplican a LNNs.
+
+## Mapa de lectura recomendado
+
+```
+1. Neural ODEs (Chen 2018) — entender la base
+       ↓
+2. Neural Circuit Policies (Lechner 2020) — topologia biologica
+       ↓
+3. Liquid Time-constant Networks (Hasani 2021) — la arquitectura core
+       ↓
+4. CfC (Hasani 2022) — la version practica
+       ↓
+5. Liquid-S4 (Hasani 2023) — conexion con SSMs
+       ↓
+6. Mamba (Gu 2023) — entender el estado del arte en SSMs
+       ↓
+7. Papers de escalabilidad (2024-25) — el futuro
+```

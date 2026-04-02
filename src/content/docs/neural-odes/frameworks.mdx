@@ -1,0 +1,228 @@
+---
+title: "Neural ODEs - Frameworks"
+description: "Librerias y herramientas para implementar Neural ODEs"
+---
+
+# Neural ODEs - Frameworks y Librerias
+
+## torchdiffeq (El estandar en PyTorch)
+
+- **Repo**: https://github.com/rtqichen/torchdiffeq
+- **Autor**: Ricky Chen (autor del paper original)
+- **Instalacion**: `pip install torchdiffeq`
+
+```python
+import torch
+from torchdiffeq import odeint, odeint_adjoint
+
+# Definir la dinamica
+class ODEFunc(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(dim, 128),
+            torch.nn.Tanh(),
+            torch.nn.Linear(128, dim)
+        )
+    
+    def forward(self, t, y):
+        return self.net(y)
+
+func = ODEFunc(dim=64)
+y0 = torch.randn(32, 64)  # (batch, dim)
+t = torch.linspace(0, 1, 10)
+
+# Forward (backprop normal, mas memoria)
+y = odeint(func, y0, t)
+
+# Forward (adjoint method, O(1) memoria)
+y = odeint_adjoint(func, y0, t)
+```
+
+### Solvers disponibles
+
+| Solver | Tipo | Uso recomendado |
+|---|---|---|
+| `dopri5` | Adaptativo, Runge-Kutta 4(5) | **Default**, la mayoria de casos |
+| `euler` | Fijo, orden 1 | Rapido, menos preciso |
+| `midpoint` | Fijo, orden 2 | Balance velocidad/precision |
+| `rk4` | Fijo, orden 4 | Preciso, paso fijo |
+| `adams` | Adaptativo, multi-step | ODEs suaves |
+| `implicit_adams` | Implicito | ODEs stiff |
+
+```python
+# Elegir solver
+y = odeint(func, y0, t, method='dopri5', rtol=1e-5, atol=1e-7)
+y = odeint(func, y0, t, method='euler', options={'step_size': 0.1})
+```
+
+## diffrax (JAX, moderno y rapido)
+
+- **Repo**: https://github.com/patrick-kidger/diffrax
+- **Autor**: Patrick Kidger (autor de Neural CDEs)
+- **Instalacion**: `pip install diffrax`
+
+```python
+import jax.numpy as jnp
+from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt
+
+def vector_field(t, y, args):
+    return -0.5 * y  # ejemplo simple
+
+term = ODETerm(vector_field)
+solver = Dopri5()
+saveat = SaveAt(ts=jnp.linspace(0, 1, 100))
+sol = diffeqsolve(term, solver, t0=0, t1=1, dt0=0.1, y0=jnp.array([1.0]), saveat=saveat)
+```
+
+**Ventajas sobre torchdiffeq**:
+- Mas rapido (JIT compilation de JAX)
+- Soporte nativo para CDEs, SDEs
+- API mas limpia y moderna
+- Mejor para investigacion
+
+## torchcde (Controlled Differential Equations)
+
+- **Repo**: https://github.com/patrick-kidger/torchcde
+- **Para**: Neural CDEs (la extension mas importante para secuencias)
+- **Instalacion**: `pip install torchcde`
+
+```python
+import torch
+import torchcde
+
+# Interpolar datos como camino continuo
+coeffs = torchcde.hermite_cubic_coefficients_with_backward_differences(data)
+X = torchcde.CubicSpline(coeffs)
+
+# Definir el modelo CDE
+class CDEFunc(torch.nn.Module):
+    def __init__(self, input_channels, hidden_channels):
+        super().__init__()
+        self.linear = torch.nn.Linear(
+            hidden_channels, hidden_channels * input_channels
+        )
+    
+    def forward(self, t, z):
+        return self.linear(z).view(z.shape[0], z.shape[1], -1)
+
+# Resolver
+z0 = torch.randn(batch_size, hidden_channels)
+func = CDEFunc(input_channels, hidden_channels)
+z_T = torchcde.cdeint(X=X, z0=z0, func=func, t=X.interval)
+```
+
+## torchsde (Stochastic DEs)
+
+- **Repo**: https://github.com/google-research/torchsde
+- **Para**: Modelos estocasticos (diffusion, VAEs)
+- **Instalacion**: `pip install torchsde`
+
+## DiffEqFlux.jl (Julia - SciML)
+
+- **Repo**: https://github.com/SciML/DiffEqFlux.jl
+- **Ventaja**: Los mejores solvers ODE del ecosistema, performance superior
+
+```julia
+using DiffEqFlux, OrdinaryDiffEq, Flux
+
+# Neural ODE
+dudt = Chain(Dense(2, 50, tanh), Dense(50, 2))
+tspan = (0.0f0, 1.0f0)
+node = NeuralODE(dudt, tspan, Tsit5(), saveat=0.1)
+
+# Forward
+u0 = Float32[2.0; 0.0]
+pred = node(u0)
+```
+
+## Ejemplo Completo: Latent ODE para Series Temporales
+
+```python
+import torch
+import torch.nn as nn
+from torchdiffeq import odeint
+
+class LatentODE(nn.Module):
+    def __init__(self, obs_dim, latent_dim, hidden_dim):
+        super().__init__()
+        # Encoder: datos → distribucion latente
+        self.encoder_rnn = nn.GRU(obs_dim, hidden_dim, batch_first=True)
+        self.encoder_mu = nn.Linear(hidden_dim, latent_dim)
+        self.encoder_logvar = nn.Linear(hidden_dim, latent_dim)
+        
+        # ODE dynamics
+        self.ode_func = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, latent_dim)
+        )
+        
+        # Decoder: estado latente → observacion
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, obs_dim)
+        )
+    
+    def ode_dynamics(self, t, z):
+        return self.ode_func(z)
+    
+    def forward(self, x, t_obs, t_pred):
+        # Encode
+        _, h = self.encoder_rnn(x)
+        mu = self.encoder_mu(h.squeeze(0))
+        logvar = self.encoder_logvar(h.squeeze(0))
+        
+        # Reparametrize
+        z0 = mu + torch.randn_like(mu) * torch.exp(0.5 * logvar)
+        
+        # Solve ODE forward
+        z_pred = odeint(self.ode_dynamics, z0, t_pred)
+        
+        # Decode
+        x_pred = self.decoder(z_pred)
+        return x_pred, mu, logvar
+
+# Uso
+model = LatentODE(obs_dim=3, latent_dim=16, hidden_dim=64)
+```
+
+## Tips Practicos
+
+### Eleccion de solver
+- **Empieza con `dopri5`** (adaptativo, robusto)
+- Si es lento, prueba `euler` o `rk4` con paso fijo
+- Para ODEs stiff: `implicit_adams` o solvers implicitos
+
+### Tolerancias
+```python
+# Mas estricto = mas preciso pero mas lento
+odeint(func, y0, t, rtol=1e-3, atol=1e-5)   # rapido
+odeint(func, y0, t, rtol=1e-5, atol=1e-7)   # preciso (default)
+odeint(func, y0, t, rtol=1e-7, atol=1e-9)   # muy preciso
+```
+
+### Regularizacion de NFE
+```python
+# Penalizar demasiadas evaluaciones de funcion
+class RegularizedODE(nn.Module):
+    def __init__(self):
+        self.nfe = 0
+    
+    def forward(self, t, y):
+        self.nfe += 1
+        return self.dynamics(y)
+
+# En el loss
+loss = task_loss + 0.01 * model.ode_func.nfe
+```
+
+### Adjoint vs Direct backprop
+
+| Metodo | Memoria | Velocidad | Precision |
+|---|---|---|---|
+| `odeint` (direct) | $O(\text{NFE})$ | Rapido | Exacta |
+| `odeint_adjoint` | $O(1)$ | Mas lento | Aproximada |
+
+**Regla**: Usa adjoint solo si te quedas sin memoria. Para modelos pequenos, `odeint` normal es mejor.

@@ -1,0 +1,148 @@
+---
+title: "Computacion Evolutiva - Papers"
+description: "Papers fundamentales y recientes sobre computacion evolutiva y neuroevolucion"
+---
+
+# Computacion Evolutiva - Papers
+
+## Papers Fundamentales
+
+### "The CMA Evolution Strategy: A Tutorial"
+- **Autores**: Nikolaus Hansen
+- **Año**: 2016 (actualizado regularmente)
+- **Link**: https://arxiv.org/abs/1604.00772
+- **Contribucion**: EL tutorial de referencia sobre CMA-ES. Explica todos los mecanismos (adaptacion de covarianza, CSA, ponderacion de ranking) con rigor matematico. Lectura obligatoria para entender ES modernas.
+
+### "Evolution Strategies as a Scalable Alternative to Reinforcement Learning"
+- **Autores**: Tim Salimans, Jonathan Ho, Xi Chen, Szymon Sidor, Ilya Sutskever (OpenAI)
+- **Año**: 2017
+- **Link**: https://arxiv.org/abs/1703.03864
+- **Contribucion**: Paper que puso la neuroevolucion de vuelta en el mapa. Demostro que ES simple puede resolver tareas de RL (Atari, MuJoCo) competitivamente con policy gradients, y **escala linealmente** con el numero de CPUs. Entrenaron en 10 minutos lo que A3C tarda 1 hora.
+
+### "Simple Random Search Provides a Competitive Approach to Reinforcement Learning" (ARS)
+- **Autores**: Horia Mania, Aurelia Guy, Benjamin Recht
+- **Año**: 2018
+- **Link**: https://arxiv.org/abs/1803.07055
+- **Contribucion**: Demostro que una busqueda aleatoria simple (ARS) con diferencias antiteticas es sorprendentemente competitiva con metodos sofisticados de RL. Cuestiono la complejidad necesaria en optimizacion de politicas.
+
+### "Natural Evolution Strategies"
+- **Autores**: Daan Wierstra, Tom Schaul, Tobias Glasmachers, Yi Sun, Jan Peters, Jurgen Schmidhuber
+- **Año**: 2014
+- **Venue**: JMLR
+- **Link**: https://arxiv.org/abs/1106.4487
+- **Contribucion**: Formaliza la familia NES (xNES, SNES). Introduce el uso del gradiente natural (Fisher information) para actualizar la distribucion de busqueda. Base teorica de todas las NES modernas.
+
+### "Exponential Natural Evolution Strategies" (xNES)
+- **Autores**: Tobias Glasmachers, Tom Schaul, Yi Sun, Daan Wierstra, Jurgen Schmidhuber
+- **Año**: 2010
+- **Link**: https://arxiv.org/abs/1211.1088
+- **Contribucion**: Variante de NES que parametriza la covarianza con la exponencial matricial, asegurando positividad definitiva y convergencia estable.
+
+### "Completely Derandomized Self-Adaptation in Evolution Strategies"
+- **Autores**: Nikolaus Hansen, Andreas Ostermeier
+- **Año**: 2001
+- **Venue**: Evolutionary Computation
+- **Contribucion**: El paper original de CMA-ES. Introduce adaptacion de la covarianza completa y CSA. Fundacional para toda la investigacion posterior en ES.
+
+## Papers sobre Neuroevolucion
+
+### "A Neuroevolution Approach to General Atari Game Playing"
+- **Autores**: Matthew Hausknecht, Joel Lehman, Risto Miikkulainen, Peter Stone
+- **Año**: 2014
+- **Contribucion**: Neuroevolucion para jugar Atari. Demostro que evolucionar redes neuronales puede competir con deep RL en algunos juegos.
+
+### "NEAT: Evolving Neural Networks through Augmenting Topologies"
+- **Autores**: Kenneth O. Stanley, Risto Miikkulainen
+- **Año**: 2002
+- **Venue**: Evolutionary Computation
+- **Link**: http://nn.cs.utexas.edu/downloads/papers/stanley.ec02.pdf
+- **Contribucion**: NEAT co-evoluciona topologia y pesos de redes neuronales. Introduce especiacion para proteger innovaciones. Paper clasico de neuroevolucion que inspiro muchos trabajos posteriores.
+
+### "Large-Scale Evolution of Image Classifiers"
+- **Autores**: Esteban Real, Sherry Moore, Andrew Selle, Saurabh Saxena, et al. (Google Brain)
+- **Año**: 2017
+- **Link**: https://arxiv.org/abs/1703.01041
+- **Contribucion**: Evoluciono arquitecturas de CNNs a escala. Encontro arquitecturas competitivas con las diseñadas por humanos (ResNet, Inception). Precursora de NAS (Neural Architecture Search) con evolucion.
+
+### "Regularized Evolution for Image Classifier Architecture Search" (AmoebaNet)
+- **Autores**: Esteban Real, Alok Aggarwal, Yanping Huang, Quoc V. Le (Google Brain)
+- **Año**: 2019
+- **Venue**: AAAI 2019
+- **Link**: https://arxiv.org/abs/1802.01548
+- **Contribucion**: Demuestra que evolucion regularizada (tournament selection con aging) es **mas robusta y eficiente** que RL-based NAS para encontrar arquitecturas. AmoebaNet supero a NASNet.
+
+## Papers Recientes (2023-2025)
+
+### "evosax: JAX-based Evolution Strategies"
+- **Autores**: Robert Tjarko Lange
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2212.04180
+- **Contribucion**: Presenta evosax — 30+ algoritmos evolutivos unificados en JAX con el patron ask-eval-tell. Demuestra que la compilacion XLA acelera ES 100x+ comparado con implementaciones NumPy. Enables nuevos patrones como vectorizacion masiva de runs.
+
+### "Discovered Policy Optimisation" / "Discovering Evolution Strategies via Meta-Black-Box Optimization"
+- **Autores**: Robert Tjarko Lange et al.
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2302.04313
+- **Contribucion**: Usa meta-learning (Transformer) para **descubrir nuevas estrategias de evolucion** automaticamente. Las ES descubiertas superan a CMA-ES y OpenAI-ES en muchos problemas. Concepto fascinante: evolucionar la evolucion.
+
+### "OpenELM: An Efficient Language Model Family with Open Training and Inference Framework"
+- **Autores**: Apple
+- **Año**: 2024
+- **Contribucion**: Usa busqueda evolutiva para optimizar la configuracion de capas (ancho, heads) en un LLM. Demuestra que la evolucion puede encontrar configuraciones superiores a los diseños manuales.
+
+### "EvoPrompting: Language Models for Code-Level Neural Architecture Search"
+- **Autores**: Angelica Chen, David Dohan, David So
+- **Año**: 2023
+- **Venue**: NeurIPS 2023
+- **Link**: https://arxiv.org/abs/2302.14838
+- **Contribucion**: Usa LLMs como operador de mutacion en evolucion de arquitecturas. El LLM genera variantes de codigo de redes neuronales, la evolucion selecciona las mejores. Fusion elegante de LLMs + evolucion.
+
+### "Quality-Diversity through AI Feedback" (QDAIF)
+- **Año**: 2024
+- **Contribucion**: Combina algoritmos de Quality-Diversity (MAP-Elites) con feedback de LLMs para generar contenido diverso y de alta calidad. Evolucion guiada por IA.
+
+### "LLMs as Evolutionary Optimizers"
+- **Año**: 2024
+- **Contribucion**: Linea de investigacion que usa LLMs como operadores de crossover/mutacion en algoritmos evolutivos. El LLM "entiende" el problema y genera mejores variantes que operadores aleatorios.
+
+## Papers sobre Evolucion + LLMs (La Interseccion)
+
+### "Neural Architecture Search with Reinforcement Learning"
+- **Autores**: Barret Zoph, Quoc V. Le (Google Brain)
+- **Año**: 2017
+- **Link**: https://arxiv.org/abs/1611.01578
+- **Contribucion**: NAS original con RL. Relevante porque la alternativa evolutiva (AmoebaNet) demostro ser superior.
+
+### "Efficient Neural Architecture Search via Parameter Sharing" (ENAS)
+- **Autores**: Hieu Pham et al.
+- **Año**: 2018
+- **Contribucion**: NAS eficiente con weight sharing. Reduce el costo de NAS ~1000x.
+
+### "The Surprising Effectiveness of PPO in Cooperative, Multi-Agent Games"
+- **Relevancia**: RL y ES compiten en este espacio. ES tiene ventajas en paralelismo masivo.
+
+### "FunSearch: Making New Discoveries in Mathematical Sciences Using LLMs"
+- **Autores**: DeepMind
+- **Año**: 2024
+- **Venue**: Nature
+- **Contribucion**: Usa LLM + evolucion para descubrir nuevas funciones matematicas. El LLM genera candidatos, la evolucion los selecciona y refina. Descubrio soluciones al cap set problem que superan las conocidas. **Demostracion de que LLM + evolucion es mas que la suma de sus partes.**
+
+## Mapa de Lectura
+
+```
+CMA-ES Tutorial (Hansen) ← fundamentos
+    ↓
+NES (Wierstra 2014) ← gradiente natural
+    ↓
+OpenAI-ES (Salimans 2017) ← neuroevolucion moderna
+    ├── ARS (Mania 2018) ← simplicidad
+    └── NEAT (Stanley 2002) ← evolucion de topologia
+    ↓
+AmoebaNet (Real 2019) ← evolucion > RL para NAS
+    ↓
+evosax (Lange 2023) ← framework moderno
+    ├── Discovered ES (2023) ← meta-evolucion
+    └── EvoPrompting (2023) ← LLM + evolucion
+        ↓
+FunSearch (DeepMind 2024) ← LLM × evolucion = descubrimiento
+```

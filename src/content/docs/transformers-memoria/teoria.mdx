@@ -1,0 +1,177 @@
+---
+title: "Transformers con Memoria - Teoria"
+description: "Fundamentos de Transformers con memoria persistente y externa"
+---
+
+# Transformers con Memoria - Fundamentos Teoricos
+
+## El Problema Central
+
+La self-attention estandar opera sobre una **ventana finita** de contexto:
+
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
+
+Con secuencia de longitud $n$: memoria $O(n^2)$, FLOPs $O(n^2 d)$. Aumentar el contexto es costoso. Y aun con contextos largos, la informacion **no persiste entre sesiones**.
+
+## Taxonomia de Soluciones
+
+```
+Transformers con Memoria
+├── Extended Context (mas contexto, misma arquitectura)
+│   ├── FlashAttention (optimizacion de HW)
+│   ├── RoPE extensions (YaRN, LongRoPE)
+│   └── Ring Attention (distribuido)
+├── Retrieval-Augmented (buscar en memoria externa)
+│   ├── RETRO
+│   └── Memorizing Transformers
+├── Compressive Memory (comprimir contexto antiguo)
+│   ├── Compressive Transformer
+│   └── Infini-attention
+├── Persistent Memory (parametros de memoria aprendidos)
+│   ├── Memory Layers at Scale
+│   └── Block-Recurrent Transformer
+└── Dilated/Sparse (patrones de atencion eficientes)
+    ├── LongNet
+    └── Landmark Attention
+```
+
+## RETRO (Retrieval-Enhanced Transformer)
+
+**DeepMind, Borgeaud et al. (2022)**
+
+En vez de meter toda la informacion en los pesos o el contexto, **buscar en una base de datos externa** de trillones de tokens.
+
+### Mecanismo:
+
+1. Dividir el input en **chunks** de ~64 tokens
+2. Para cada chunk, buscar los **k vecinos mas cercanos** en un indice externo (FAISS)
+3. Usar **chunked cross-attention** para integrar los vecinos recuperados
+
+$$
+\text{CCA}(H, \text{Ret}) = \text{softmax}\left(\frac{Q_H K_{\text{Ret}}^T}{\sqrt{d}}\right) V_{\text{Ret}}
+$$
+
+Donde:
+- $Q_H$ = queries del chunk actual
+- $K_{\text{Ret}}, V_{\text{Ret}}$ = keys/values de los chunks recuperados
+
+**Resultado**: Un modelo de 7B + RETRO iguala la perplexity de un modelo de 25B sin RETRO.
+
+## Memorizing Transformers
+
+**Wu et al. (2022)**
+
+Extiende el KV-cache con un **almacen externo permanente** accesible por kNN.
+
+### Mecanismo:
+
+En cada capa de attention:
+
+$$
+\text{Attn}_{\text{total}} = \text{gate} \cdot \text{Attn}_{\text{local}}(Q, K, V) + (1 - \text{gate}) \cdot \text{kNN-Attn}(Q, K_{\text{ext}}, V_{\text{ext}})
+$$
+
+Donde:
+- $\text{Attn}_{\text{local}}$ = attention normal sobre el contexto actual
+- $\text{kNN-Attn}$ = attention sobre los top-k KV pairs mas similares del almacen externo
+- $\text{gate}$ = parametro aprendible que balancea local vs externo
+
+**Clave**: El almacen externo puede contener **millones** de pares KV de conversaciones/documentos anteriores.
+
+## LongNet: Dilated Attention
+
+**Microsoft, Ding et al. (2023)**
+
+Escalar attention a **1 billon de tokens** con dilated attention:
+
+$$
+\text{DilatedAttn}(Q, K, V) = \text{Concat}(\text{Attn}_1, \text{Attn}_2, ..., \text{Attn}_k)
+$$
+
+Cada $\text{Attn}_i$ opera sobre segmentos con dilation rate $r_i$ diferente:
+- $r_1 = 1$: atiende a tokens adyacentes (local)
+- $r_2 = 4$: atiende a cada 4to token
+- $r_3 = 16$: atiende a cada 16vo token
+- ...
+
+Esto da cobertura global con costo sub-cuadratico.
+
+## Infini-attention
+
+**Google, Munkhdalai et al. (2024)**
+
+Combina **attention estandar + memoria compresiva** en la misma capa:
+
+### Mecanismo:
+
+Para cada segmento $s$ del contexto:
+
+1. **Attention local** (normal): $A_{\text{local}} = \text{softmax}(QK^T/\sqrt{d})V$
+2. **Memory retrieval**: $A_{\text{mem}} = \sigma(QM_s^T)M_s V$ donde $M_s$ es la memoria comprimida
+3. **Combinacion**: $O = \text{gate} \cdot A_{\text{local}} + (1 - \text{gate}) \cdot A_{\text{mem}}$
+4. **Memory update**: Comprimir el KV del segmento actual y añadirlo a $M$
+
+$$
+M_{s+1} = M_s + \sigma(K_s)^T V_s - \sigma(K_s)^T \sigma(K_s) M_s V_s
+$$
+
+**Clave**: La memoria es de tamaño fijo independientemente de cuantos tokens se han visto. Es como un SSM dentro de la attention.
+
+## Memory Layers at Scale
+
+**Meta (2024)**
+
+Capas con **millones de pares key-value aprendibles** que actuan como base de datos interna:
+
+$$
+y = \text{softmax}(q \cdot K_{\text{mem}}^T / \sqrt{d}) \cdot V_{\text{mem}}
+$$
+
+Donde $K_{\text{mem}} \in \mathbb{R}^{N \times d}$ y $V_{\text{mem}} \in \mathbb{R}^{N \times d}$ con $N$ en el orden de millones.
+
+**Diferencia con attention**: Los keys y values son **parametros del modelo** (aprendidos), no generados por el input. Es como una lookup table diferenciable masiva.
+
+**Eficiencia**: Se usa **product key retrieval** para acceder solo a los top-k entries relevantes, evitando el costo $O(N)$ de soft attention.
+
+## Block-Recurrent Transformer
+
+**DeepMind (2022)**
+
+Divide la secuencia en bloques y añade **recurrencia entre bloques**:
+
+$$
+h_t^{\text{block}} = f(h_{t-1}^{\text{block}}, \text{Block}_t)
+$$
+
+Cada bloque se procesa con attention normal internamente, pero entre bloques hay un estado recurrente que pasa informacion.
+
+**Efecto**: Contexto teoricamente infinito con attention cuadratica solo dentro de cada bloque.
+
+## Extensiones de Posicion: RoPE, YaRN, LongRoPE
+
+### RoPE (Rotary Position Embedding):
+$$
+f(q, m) = q \cdot e^{im\theta}
+$$
+
+### YaRN (Yet another RoPE extensioN):
+Extiende RoPE a contextos mas largos ajustando las frecuencias:
+$$
+\theta_i' = \theta_i \cdot \alpha^{-2i/d}
+$$
+
+Permite extender un modelo entrenado con 4K de contexto a 128K+ con poco fine-tuning.
+
+## Comparacion de Enfoques
+
+| Enfoque | Contexto efectivo | Costo | Persistencia | Calidad |
+|---|---|---|---|---|
+| FlashAttention + RoPE largo | ~128K-1M | $O(n^2)$ (optimizado) | No | Excelente |
+| RETRO | Trillones (externo) | $O(n + k)$ retrieval | Si (DB) | Muy buena |
+| Memorizing Transformers | Millones (KV store) | $O(n + k)$ kNN | Si | Muy buena |
+| LongNet | Hasta 1B | Sub-cuadratico | No | Buena |
+| Infini-attention | Infinito (teorico) | $O(n)$ (memoria fija) | Si (compressed) | Prometedora |
+| Memory Layers | Millones (aprendidos) | $O(k)$ lookup | Si (pesos) | Muy buena |
+| Block-Recurrent | Infinito (teorico) | $O(b^2)$ por bloque | Si (estado) | Buena |

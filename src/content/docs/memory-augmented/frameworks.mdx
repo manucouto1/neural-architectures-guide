@@ -1,0 +1,222 @@
+---
+title: "Memory-Augmented Networks - Frameworks"
+description: "Librerias y herramientas para implementar MANNs"
+---
+
+# Memory-Augmented Networks - Frameworks
+
+## Implementaciones Disponibles
+
+### pytorch-ntm
+- **Repo**: https://github.com/loudinthecloud/pytorch-ntm
+- **Estado**: Referencia educativa, no mantenida activamente
+- **Uso**: Aprender como funcionan NTMs
+
+### pytorch-dnc
+- **Repo**: https://github.com/ixaxaar/pytorch-dnc
+- **Estado**: Implementacion completa de DNC
+- **Instalacion**: `pip install dnc`
+
+```python
+from dnc import DNC
+
+# Crear DNC
+model = DNC(
+    input_size=64,
+    hidden_size=128,
+    rnn_type='lstm',
+    num_layers=1,
+    num_hidden_layers=2,
+    nr_cells=100,        # slots de memoria
+    cell_size=32,         # dimension de cada slot
+    read_heads=4,
+    gpu_id=0
+)
+
+# Forward
+output, (controller_hidden, memory, read_vectors) = model(input_tensor, hidden_state)
+```
+
+### Nota importante
+El ecosistema de MANNs es **menos maduro** que el de Transformers o SSMs. La mayoria de implementaciones son educativas o de investigacion. No hay un "HuggingFace para MANNs".
+
+## Implementacion desde Cero: NTM Simple
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class NTMMemory(nn.Module):
+    def __init__(self, num_slots, slot_dim):
+        super().__init__()
+        self.num_slots = num_slots
+        self.slot_dim = slot_dim
+        # Memoria inicializada pequena
+        self.memory = nn.Parameter(torch.randn(num_slots, slot_dim) * 0.01)
+    
+    def read(self, weights):
+        """weights: (batch, num_slots)"""
+        return torch.bmm(weights.unsqueeze(1), 
+                         self.memory.unsqueeze(0).expand(weights.size(0), -1, -1)).squeeze(1)
+    
+    def write(self, weights, erase, add, memory_state):
+        """Erase-then-add write"""
+        # Erase
+        erase_matrix = torch.bmm(weights.unsqueeze(2), erase.unsqueeze(1))
+        memory_state = memory_state * (1 - erase_matrix)
+        # Add
+        add_matrix = torch.bmm(weights.unsqueeze(2), add.unsqueeze(1))
+        memory_state = memory_state + add_matrix
+        return memory_state
+
+class ContentAddressing(nn.Module):
+    def __init__(self, slot_dim, key_dim):
+        super().__init__()
+        self.key_proj = nn.Linear(key_dim, slot_dim)
+    
+    def forward(self, key, memory, beta):
+        """Content-based addressing"""
+        key = self.key_proj(key)
+        # Cosine similarity
+        key_norm = F.normalize(key.unsqueeze(1), dim=-1)
+        mem_norm = F.normalize(memory, dim=-1)
+        similarity = torch.bmm(key_norm, mem_norm.transpose(1, 2)).squeeze(1)
+        # Sharpen with beta
+        return F.softmax(beta * similarity, dim=-1)
+
+class SimpleNTM(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_slots=128, slot_dim=64):
+        super().__init__()
+        self.num_slots = num_slots
+        self.slot_dim = slot_dim
+        
+        # Controller (LSTM)
+        self.controller = nn.LSTMCell(input_dim + slot_dim, hidden_dim)
+        
+        # Memory
+        self.memory = NTMMemory(num_slots, slot_dim)
+        self.addressing = ContentAddressing(slot_dim, hidden_dim)
+        
+        # Heads
+        self.read_key = nn.Linear(hidden_dim, slot_dim)
+        self.write_key = nn.Linear(hidden_dim, slot_dim)
+        self.erase_head = nn.Linear(hidden_dim, slot_dim)
+        self.add_head = nn.Linear(hidden_dim, slot_dim)
+        self.beta_read = nn.Linear(hidden_dim, 1)
+        self.beta_write = nn.Linear(hidden_dim, 1)
+        
+        # Output
+        self.output = nn.Linear(hidden_dim + slot_dim, output_dim)
+    
+    def forward(self, x, hidden=None, memory_state=None):
+        batch_size, seq_len, _ = x.shape
+        
+        if hidden is None:
+            h = torch.zeros(batch_size, self.controller.hidden_size, device=x.device)
+            c = torch.zeros(batch_size, self.controller.hidden_size, device=x.device)
+        else:
+            h, c = hidden
+        
+        if memory_state is None:
+            memory_state = self.memory.memory.unsqueeze(0).expand(batch_size, -1, -1).clone()
+        
+        read_vector = torch.zeros(batch_size, self.slot_dim, device=x.device)
+        outputs = []
+        
+        for t in range(seq_len):
+            # Controller input: x_t concatenado con lectura anterior
+            controller_input = torch.cat([x[:, t], read_vector], dim=-1)
+            h, c = self.controller(controller_input, (h, c))
+            
+            # Read
+            beta_r = F.softplus(self.beta_read(h))
+            read_weights = self.addressing(h, memory_state, beta_r)
+            read_vector = self.memory.read(read_weights)
+            
+            # Write
+            beta_w = F.softplus(self.beta_write(h))
+            write_weights = self.addressing(h, memory_state, beta_w)
+            erase = torch.sigmoid(self.erase_head(h))
+            add = torch.tanh(self.add_head(h))
+            memory_state = self.memory.write(write_weights, erase, add, memory_state)
+            
+            # Output
+            out = self.output(torch.cat([h, read_vector], dim=-1))
+            outputs.append(out)
+        
+        return torch.stack(outputs, dim=1), (h, c), memory_state
+
+# Uso
+model = SimpleNTM(input_dim=8, hidden_dim=128, output_dim=8, num_slots=128, slot_dim=64)
+x = torch.randn(4, 20, 8)  # (batch, seq_len, features)
+output, hidden, mem = model(x)
+```
+
+## Ejemplo: Copy Task (benchmark clasico de NTMs)
+
+```python
+# La copy task: el modelo debe memorizar una secuencia y reproducirla
+def generate_copy_data(batch_size, seq_len, feature_dim):
+    # Secuencia a copiar
+    seq = torch.randint(0, 2, (batch_size, seq_len, feature_dim)).float()
+    # Input: [secuencia, delimitador, zeros]
+    delimiter = torch.zeros(batch_size, 1, feature_dim)
+    zeros = torch.zeros(batch_size, seq_len, feature_dim)
+    input_seq = torch.cat([seq, delimiter, zeros], dim=1)
+    # Target: [zeros, zero, secuencia]
+    target = torch.cat([torch.zeros(batch_size, seq_len + 1, feature_dim), seq], dim=1)
+    return input_seq, target
+
+# Entrenar
+model = SimpleNTM(input_dim=8, hidden_dim=128, output_dim=8)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+for epoch in range(1000):
+    x, target = generate_copy_data(32, 10, 8)
+    output, _, _ = model(x)
+    loss = F.binary_cross_entropy_with_logits(output, target)
+    optimizer.zero_grad()
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+    optimizer.step()
+```
+
+## Tips Practicos
+
+| Tip | Detalle |
+|---|---|
+| **Gradient clipping** | Esencial — usa `clip_grad_norm_(params, 10.0)` |
+| **Inicializacion de memoria** | Pequeña y aleatoria (no zeros) |
+| **Learning rate** | Bajo: `1e-4` a `5e-4` |
+| **Controller** | LSTM funciona mejor que FFN |
+| **Num slots** | Empezar con 64-128, escalar segun la tarea |
+| **Slot dimension** | 32-128 suele bastar |
+| **Optimizer** | Adam o RMSprop (no SGD) |
+| **Batch size** | 16-32 para estabilidad |
+| **Paciencia** | NTMs tardan en converger — mas de 10K steps |
+
+## Herramientas complementarias
+
+### FAISS (Facebook AI Similarity Search)
+Para implementar memoria externa de gran escala con busqueda aproximada:
+
+```python
+import faiss
+
+# Crear indice
+d = 64  # dimension
+index = faiss.IndexFlatIP(d)  # inner product (cosine similarity)
+
+# Añadir vectores de memoria
+memory_vectors = np.random.random((10000, d)).astype('float32')
+faiss.normalize_L2(memory_vectors)
+index.add(memory_vectors)
+
+# Buscar k vecinos mas cercanos
+query = np.random.random((1, d)).astype('float32')
+faiss.normalize_L2(query)
+D, I = index.search(query, k=10)  # top-10
+```
+
+**Util para**: Escalar MANNs a millones de slots usando busqueda aproximada en vez de soft attention sobre toda la memoria.

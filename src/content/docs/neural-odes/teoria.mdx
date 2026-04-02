@@ -1,0 +1,157 @@
+---
+title: "Neural ODEs - Teoria"
+description: "Fundamentos matematicos de Neural Ordinary Differential Equations"
+---
+
+# Neural ODEs - Fundamentos Teoricos
+
+## Origen
+
+Presentado por **Chen et al.** en NeurIPS 2018 (Best Paper Award). La idea: en vez de apilar capas discretas, modelar la red como una **ecuacion diferencial continua**.
+
+## La Conexion ResNet → ODE
+
+Una ResNet tiene bloques residuales:
+
+$$
+h_{t+1} = h_t + f_\theta(h_t)
+$$
+
+Esto es una **discretizacion de Euler** con paso $\Delta t = 1$ de la ODE:
+
+$$
+\frac{dh(t)}{dt} = f_\theta(h(t), t)
+$$
+
+Si en vez de tomar pasos discretos dejamos que $\Delta t \to 0$, obtenemos una red de **profundidad continua**:
+
+$$
+h(T) = h(0) + \int_0^T f_\theta(h(t), t) \, dt
+$$
+
+donde $f_\theta$ es una red neuronal que define la "velocidad" del estado en cada punto.
+
+## Adjoint Method: Backpropagation con Memoria Constante
+
+El truco clave. En vez de almacenar todos los estados intermedios (como en backprop normal), se usa el **metodo adjunto**:
+
+1. **Forward**: Resolver la ODE de $t=0$ a $t=T$
+2. **Backward**: Resolver una ODE adjunta de $t=T$ a $t=0$
+
+La adjoint ODE es:
+
+$$
+\frac{da(t)}{dt} = -a(t)^T \frac{\partial f_\theta(h(t), t)}{\partial h}
+$$
+
+donde $a(t) = \frac{\partial L}{\partial h(t)}$ es el "gradiente adjunto".
+
+**Ventaja**: Memoria $O(1)$ respecto a la "profundidad" (vs $O(L)$ en ResNets).
+
+**Gradiente de los parametros**:
+
+$$
+\frac{dL}{d\theta} = -\int_T^0 a(t)^T \frac{\partial f_\theta(h(t), t)}{\partial \theta} \, dt
+$$
+
+## Adaptive Computation
+
+Un solver ODE adaptativo (como `dopri5`) ajusta automaticamente el numero de evaluaciones segun la complejidad de la dinamica:
+
+- **Input simple** → pocos pasos → rapido
+- **Input complejo** → mas pasos → mas preciso
+
+$$
+\text{NFE (Number of Function Evaluations)} \propto \text{complejidad del input}
+$$
+
+Esto da **profundidad adaptativa**: el modelo decide cuanto "pensar" segun lo que ve.
+
+## Augmented Neural ODEs
+
+**Problema**: Una Neural ODE clasica no puede cruzar trayectorias en el espacio de estados (por el teorema de existencia y unicidad). Esto limita la expresividad.
+
+**Solucion** (Dupont et al., 2019): Aumentar la dimension del estado:
+
+$$
+\frac{d}{dt}\begin{pmatrix} h(t) \\ a(t) \end{pmatrix} = f_\theta\left(\begin{pmatrix} h(t) \\ a(t) \end{pmatrix}, t\right)
+$$
+
+donde $a(t)$ son dimensiones auxiliares inicializadas a cero. Esto permite que las trayectorias se "esquiven" en dimensiones superiores.
+
+## Latent ODEs para Series Temporales
+
+Especialmente util para datos irregularmente muestreados:
+
+$$
+z_0 = \text{Encoder}(x_{t_1}, x_{t_2}, ..., x_{t_N})
+$$
+
+$$
+z(t) = z_0 + \int_0^t f_\theta(z(s)) \, ds \quad \text{para cualquier } t
+$$
+
+$$
+\hat{x}(t) = \text{Decoder}(z(t))
+$$
+
+El modelo aprende una **representacion latente continua** que puede evaluar en cualquier punto temporal, no solo en los puntos observados.
+
+## Neural Controlled Differential Equations (CDEs)
+
+Extension crucial de Kidger et al. (2020):
+
+$$
+z(T) = z(0) + \int_0^T f_\theta(z(t)) \, dX(t)
+$$
+
+donde $dX(t)$ es el **camino de control** (la señal de entrada interpolada).
+
+**Diferencia con Neural ODE**:
+- Neural ODE: la dinamica depende solo del estado $h(t)$
+- Neural CDE: la dinamica depende del estado **Y** de la entrada en cada momento
+
+Esto es mucho mas expresivo para secuencias donde la entrada cambia con el tiempo (como texto).
+
+## Continuous Normalizing Flows (CNFs)
+
+Aplicacion a modelos generativos:
+
+$$
+\frac{\partial p(z, t)}{\partial t} = -\text{tr}\left(\frac{\partial f}{\partial z}\right) p(z, t)
+$$
+
+Transforma una distribucion simple (Gaussiana) en una compleja mediante una ODE. Es la base de los **Flow Matching** modernos que estan revolucionando la generacion.
+
+## Comparacion con Redes Discretas
+
+| Propiedad | ResNet | Neural ODE |
+|---|---|---|
+| Profundidad | Fija (L capas) | Continua (adaptativa) |
+| Memoria (backprop) | $O(L)$ | $O(1)$ (adjoint) |
+| Computacion | Fija | Adaptativa (solver) |
+| Expresividad | Depende de L | Infinita (en teoria) |
+| Invertibilidad | No garantizada | Si (resolver ODE inversa) |
+| Interpretacion | Transformaciones discretas | Flujo continuo en espacio de estados |
+
+## Limitaciones Teoricas
+
+1. **Velocidad de entrenamiento**: Los solvers ODE son mas lentos que forward passes discretos
+2. **No cruce de trayectorias**: Limita expresividad (mitigado por Augmented NODEs)
+3. **Stiffness**: Dinamicas "rigidas" requieren solvers implicitos costosos
+4. **Paralelismo limitado**: La evaluacion secuencial del solver es un cuello de botella
+5. **Regularizacion necesaria**: Sin regularizar, NFE puede explotar (el modelo se hace "infinitamente profundo")
+
+## Conexion con Diffusion Models
+
+Los diffusion models modernos son esencialmente Neural ODEs/SDEs:
+
+$$
+dx = f_\theta(x, t) \, dt + g(t) \, dW_t \quad \text{(SDE)}
+$$
+
+$$
+dx = \left[f_\theta(x, t) - \frac{1}{2}g(t)^2 \nabla_x \log p_t(x)\right] dt \quad \text{(probability flow ODE)}
+$$
+
+Flow Matching (Lipman et al., 2023) simplifica esto entrenando directamente el campo vectorial $f_\theta$.

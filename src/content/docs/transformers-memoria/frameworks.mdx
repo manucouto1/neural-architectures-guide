@@ -1,0 +1,190 @@
+---
+title: "Transformers con Memoria - Frameworks"
+description: "Librerias para implementar Transformers con memoria"
+---
+
+# Transformers con Memoria - Frameworks
+
+## FlashAttention (Optimizacion Fundamental)
+
+- **Repo**: https://github.com/Dao-AILab/flash-attention
+- **Autor**: Tri Dao (Stanford/Princeton)
+- **Instalacion**: `pip install flash-attn`
+
+```python
+from flash_attn import flash_attn_func
+
+# Flash Attention 2
+output = flash_attn_func(
+    q, k, v,           # (batch, seqlen, nheads, headdim)
+    causal=True,        # mascara causal
+    window_size=(-1, -1)  # (-1,-1) = global, (w,0) = sliding window
+)
+```
+
+**Por que importa**: FlashAttention reduce la memoria de $O(n^2)$ a $O(n)$ y es 2-4x mas rapido, sin cambiar los resultados. Es prerequisito para contextos largos.
+
+## HuggingFace Transformers
+
+Los modelos con contexto extendido estan disponibles directamente:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Modelos con contexto extendido
+models = {
+    "128K": "meta-llama/Llama-3.1-8B",        # 128K context
+    "1M":   "google/gemma-2-9b",               # extensible
+    "256K": "Qwen/Qwen2.5-7B",                 # 256K context
+}
+
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-3.1-8B",
+    torch_dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",  # usar FlashAttention
+    device_map="auto"
+)
+```
+
+## FAISS (Para Retrieval en RETRO/Memorizing Transformers)
+
+- **Repo**: https://github.com/facebookresearch/faiss
+- **Para**: Busqueda de vecinos cercanos a escala masiva
+
+```python
+import faiss
+import numpy as np
+
+# Crear indice para millones de vectores
+d = 768  # dimension de embeddings
+nlist = 1000  # numero de clusters
+
+# IVF + Product Quantization (rapido + compacto)
+quantizer = faiss.IndexFlatIP(d)
+index = faiss.IndexIVFPQ(quantizer, d, nlist, 16, 8)
+
+# Entrenar el indice
+train_vectors = np.random.random((100000, d)).astype('float32')
+faiss.normalize_L2(train_vectors)
+index.train(train_vectors)
+
+# Añadir vectores de memoria
+memory_vectors = np.random.random((1000000, d)).astype('float32')
+faiss.normalize_L2(memory_vectors)
+index.add(memory_vectors)
+
+# Buscar top-k vecinos
+query = np.random.random((batch_size, d)).astype('float32')
+faiss.normalize_L2(query)
+scores, indices = index.search(query, k=32)
+```
+
+## vLLM (Gestion eficiente de KV-cache)
+
+- **Repo**: https://github.com/vllm-project/vllm
+- **Para**: Inferencia eficiente con gestion de KV-cache (PagedAttention)
+
+```python
+from vllm import LLM, SamplingParams
+
+# vLLM maneja automaticamente el KV-cache
+llm = LLM(
+    model="meta-llama/Llama-3.1-8B",
+    max_model_len=128000,  # contexto largo
+    gpu_memory_utilization=0.9,
+    enable_chunked_prefill=True  # para contextos muy largos
+)
+
+outputs = llm.generate(["Tell me about..."], SamplingParams(max_tokens=500))
+```
+
+## Ejemplo: kNN Memory Augmentation
+
+```python
+import torch
+import torch.nn as nn
+import faiss
+
+class MemoryAugmentedAttention(nn.Module):
+    """Attention con memoria externa tipo Memorizing Transformers"""
+    def __init__(self, d_model, n_heads, memory_size=100000, top_k=32):
+        super().__init__()
+        self.local_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.gate = nn.Parameter(torch.tensor(0.5))
+        self.top_k = top_k
+        
+        # Memoria externa (inicialmente vacia)
+        self.d_model = d_model
+        self.memory_keys = []
+        self.memory_values = []
+        
+        # Indice FAISS
+        self.index = faiss.IndexFlatIP(d_model)
+    
+    def add_to_memory(self, keys, values):
+        """Añadir KV pairs a la memoria persistente"""
+        k_np = keys.detach().cpu().numpy().reshape(-1, self.d_model)
+        faiss.normalize_L2(k_np)
+        self.index.add(k_np)
+        self.memory_values.append(values.detach())
+    
+    def retrieve(self, queries):
+        """Buscar top-k en memoria externa"""
+        q_np = queries.detach().cpu().numpy().reshape(-1, self.d_model)
+        faiss.normalize_L2(q_np)
+        scores, indices = self.index.search(q_np, self.top_k)
+        # Recuperar valores correspondientes
+        # (simplificado — en produccion necesitas mapeo indices → values)
+        return scores, indices
+    
+    def forward(self, x, use_memory=True):
+        # Attention local (normal)
+        local_out, _ = self.local_attn(x, x, x)
+        
+        if use_memory and self.index.ntotal > 0:
+            # Attention sobre memoria externa
+            scores, indices = self.retrieve(x)
+            # Combinar local + memoria
+            gate = torch.sigmoid(self.gate)
+            output = gate * local_out + (1 - gate) * memory_out
+        else:
+            output = local_out
+        
+        return output
+```
+
+## Ejemplo: Extender Contexto con YaRN
+
+```python
+from transformers import AutoModelForCausalLM, AutoConfig
+
+# Cargar modelo y modificar config para contexto extendido
+config = AutoConfig.from_pretrained("meta-llama/Llama-2-7b-hf")
+
+# Aplicar YaRN scaling
+config.rope_scaling = {
+    "type": "yarn",
+    "factor": 16.0,       # 4K * 16 = 64K contexto
+    "original_max_position_embeddings": 4096,
+}
+config.max_position_embeddings = 65536
+
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-2-7b-hf",
+    config=config,
+    torch_dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2"
+)
+# Nota: necesita fine-tuning breve en textos largos para funcionar bien
+```
+
+## Tips Practicos
+
+| Tip | Detalle |
+|---|---|
+| **FlashAttention siempre** | No hay razon para no usarlo. 2-4x mejor |
+| **RoPE scaling para empezar** | La forma mas facil de extender contexto |
+| **FAISS para memoria grande** | No reinventes el retrieval — FAISS es excelente |
+| **vLLM para servir** | Gestion de KV-cache optimizada automaticamente |
+| **Chunked prefill** | Para contextos > 32K, procesar en chunks evita OOM |
+| **Gradient checkpointing** | Esencial para entrenar con contextos largos |

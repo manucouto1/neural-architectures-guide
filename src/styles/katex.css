@@ -1,0 +1,47 @@
+/* KaTeX CSS from CDN - loaded for math rendering */
+@import "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css";
+
+/* Custom overrides for dark theme compatibility */
+.katex {
+  font-size: 1.1em;
+}
+
+.katex-display {
+  margin: 1.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+
+/* Ensure math renders well in dark mode */
+:root[data-theme='dark'] .katex {
+  color: var(--sl-color-text);
+}
+
+/* Tables styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+th, td {
+  padding: 0.5em 1em;
+  border: 1px solid var(--sl-color-gray-5);
+}
+
+th {
+  background: var(--sl-color-gray-6);
+  font-weight: 600;
+}
+
+/* Code blocks in math context */
+.katex-display + pre {
+  margin-top: 0.5em;
+}
+
+/* Mermaid diagrams */
+.mermaid {
+  margin: 1.5em 0;
+  text-align: center;
+}

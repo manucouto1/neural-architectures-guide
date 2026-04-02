@@ -1,0 +1,284 @@
+---
+title: "Computacion Evolutiva - Teoria"
+description: "Fundamentos de algoritmos evolutivos, estrategias de evolucion y neuroevolucion"
+---
+
+# Computacion Evolutiva - Fundamentos Teoricos
+
+## Que es la Computacion Evolutiva
+
+La computacion evolutiva utiliza **mecanismos inspirados en la seleccion natural** para optimizar funciones. En vez de calcular gradientes, mantiene una **poblacion de soluciones** que evoluciona iterativamente.
+
+$$
+\text{Poblacion}_{t+1} = \text{Seleccion}(\text{Variacion}(\text{Poblacion}_t, \text{Fitness}))
+$$
+
+### Por que importa para deep learning
+
+| Optimizacion basada en gradientes | Optimizacion evolutiva |
+|---|---|
+| Requiere funcion diferenciable | **No necesita gradientes** |
+| Un punto (o mini-batch) | Poblacion de soluciones |
+| Se atasca en minimos locales | Explora globalmente |
+| Solo optimiza parametros continuos | Optimiza **cualquier cosa** (arquitectura, hiperparametros, pesos) |
+| Backprop: $O(n)$ con respecto a parametros | Escalable con hardware paralelo |
+
+## Taxonomia de Algoritmos Evolutivos
+
+```
+Computacion Evolutiva
+├── Evolution Strategies (ES)
+│   ├── Distribution-based (mantienen una distribucion)
+│   │   ├── CMA-ES, xNES, SNES, MA-ES...
+│   │   └── OpenAI-ES, ARS, PGPE...
+│   └── Natural Evolution Strategies (NES)
+│       └── CR-FM-NES, xNES, SNES
+├── Algoritmos Geneticos (GA)
+│   ├── Simple GA
+│   ├── Self-Adaptive (SAMR-GA, GESMR-GA)
+│   └── Learned GA (meta-aprendido)
+├── Differential Evolution (DE)
+├── Particle Swarm Optimization (PSO)
+├── Simulated Annealing (SA)
+└── Metodos Hibridos
+    ├── ES + Gradientes (Guided ES)
+    └── Meta-learned (Discovered ES, Learned ES)
+```
+
+## Evolution Strategies (ES): La Base
+
+### Idea Central
+
+Mantener una **distribucion** $\pi_\theta$ sobre el espacio de soluciones y actualizarla para maximizar el fitness esperado:
+
+$$
+\max_\theta \mathbb{E}_{x \sim \pi_\theta}[F(x)]
+$$
+
+donde $F(x)$ es la funcion de fitness y $\pi_\theta$ es tipicamente una Gaussiana multivariada:
+
+$$
+\pi_\theta = \mathcal{N}(\mu, \Sigma)
+$$
+
+### Gradiente de la esperanza (REINFORCE / score function):
+
+$$
+\nabla_\theta \mathbb{E}_{x \sim \pi_\theta}[F(x)] = \mathbb{E}_{x \sim \pi_\theta}\left[F(x) \nabla_\theta \log \pi_\theta(x)\right]
+$$
+
+Esto se estima con muestras:
+
+$$
+\nabla_\theta J \approx \frac{1}{N} \sum_{i=1}^{N} F(x_i) \nabla_\theta \log \pi_\theta(x_i)
+$$
+
+**No se necesita $\nabla_x F$** — solo evaluaciones de fitness. Por eso funciona con funciones no diferenciables.
+
+## CMA-ES: El Algoritmo Estrella
+
+**Covariance Matrix Adaptation Evolution Strategy** — considerado el mejor optimizador black-box para dimensiones medias (hasta ~1000).
+
+### Mecanismo:
+
+1. **Sample**: Generar $\lambda$ candidatos de $\mathcal{N}(\mu_t, \sigma_t^2 C_t)$
+
+$$
+x_i = \mu_t + \sigma_t \cdot C_t^{1/2} z_i, \quad z_i \sim \mathcal{N}(0, I)
+$$
+
+2. **Rank**: Ordenar por fitness
+3. **Update mean**: Media ponderada de los mejores
+
+$$
+\mu_{t+1} = \sum_{i=1}^{\mu} w_i x_{i:\lambda}
+$$
+
+4. **Update covariance**: Adaptar la forma de la distribucion
+
+$$
+C_{t+1} = (1 - c_1 - c_\mu) C_t + c_1 \underbrace{p_c p_c^T}_{\text{rank-1}} + c_\mu \underbrace{\sum_i w_i (x_{i:\lambda} - \mu_t)(x_{i:\lambda} - \mu_t)^T}_{\text{rank-}\mu}
+$$
+
+5. **Update step size**: Control del paso con CSA (Cumulative Step-size Adaptation)
+
+### Por que CMA-ES es especial:
+- Aprende la **estructura de correlacion** del paisaje de fitness
+- Se adapta a funciones no separables, mal condicionadas, multimodales
+- Invariante a transformaciones afines
+- Convergencia probada en funciones convexas
+
+### Limitacion: $O(d^2)$ en espacio y tiempo por la matriz de covarianza. Para dimensiones altas se usa **Sep-CMA-ES** o **LM-MA-ES**.
+
+## Natural Evolution Strategies (NES)
+
+Familia que usa el **gradiente natural** (Fisher information) en vez del gradiente euclidiano:
+
+$$
+\tilde{\nabla}_\theta J = F^{-1} \nabla_\theta J
+$$
+
+donde $F = \mathbb{E}[\nabla \log \pi \cdot (\nabla \log \pi)^T]$ es la matriz de informacion de Fisher.
+
+**Ventaja**: Invariante a reparametrizacion — el update no depende de como representas $\theta$.
+
+### Variantes:
+- **xNES** (Exponential NES): Parametriza la covarianza con exponencial matricial
+- **SNES** (Separable NES): Covarianza diagonal — escala a dimensiones altas
+- **CR-FM-NES**: Full-matrix con factorizacion Cholesky — balance precision/eficiencia
+
+## OpenAI-ES y Variantes Modernas
+
+### OpenAI-ES (Salimans et al., 2017)
+
+Simplificacion masiva para entrenar redes neuronales:
+
+$$
+\theta_{t+1} = \theta_t + \alpha \frac{1}{N\sigma} \sum_{i=1}^{N} F(\theta_t + \sigma \epsilon_i) \epsilon_i
+$$
+
+donde $\epsilon_i \sim \mathcal{N}(0, I)$.
+
+**Insight clave**: Si compartes las semillas $\epsilon_i$ entre workers, solo necesitas comunicar **escalares** (fitness), no vectores de gradientes. Esto escala a miles de workers.
+
+### ARS (Augmented Random Search)
+
+Version aun mas simple de ES:
+
+$$
+\theta_{t+1} = \theta_t + \frac{\alpha}{b\sigma} \sum_{i=1}^{b} [F(\theta_t + \sigma \delta_i) - F(\theta_t - \sigma \delta_i)] \delta_i
+$$
+
+Usa **diferencias antiteticas** (evalua $+\delta$ y $-\delta$) para reducir varianza.
+
+### Persistent ES
+
+Mantiene las perturbaciones entre generaciones en vez de re-samplear cada vez. Reduce varianza en problemas de RL con horizontes largos.
+
+### Guided ES
+
+Combina ES con informacion de gradientes cuando esta disponible:
+
+$$
+\delta_i = \alpha \cdot g + \beta \cdot \epsilon_i
+$$
+
+donde $g = \nabla_\theta L$ es el gradiente (cuando se puede computar) y $\epsilon_i$ es perturbacion aleatoria. Lo mejor de ambos mundos.
+
+## Algoritmos Geneticos (GA)
+
+Mantienen una **poblacion de individuos** con operadores geneticos:
+
+### Operadores:
+
+**Seleccion** (elegir padres):
+$$
+P(\text{seleccion de } i) \propto F(x_i) \quad \text{(fitness-proportional)}
+$$
+
+**Crossover** (combinar padres):
+$$
+x_{\text{hijo}} = \text{mask} \odot x_{\text{padre1}} + (1 - \text{mask}) \odot x_{\text{padre2}}
+$$
+
+**Mutacion** (perturbacion):
+$$
+x_{\text{mutado}} = x + \sigma \cdot \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)
+$$
+
+### Variantes en evosax:
+| GA | Caracteristica |
+|---|---|
+| **Simple GA** | Implementacion clasica |
+| **MR15-GA** | Mutacion con tasa adaptativa (2015) |
+| **SAMR-GA** | Self-Adaptive Mutation Rate |
+| **GESMR-GA** | Guided ES + Mutation Rate |
+| **Learned GA** | Operadores aprendidos via meta-learning |
+
+## Differential Evolution (DE)
+
+Usa **diferencias entre individuos** como direccion de busqueda:
+
+$$
+v_i = x_{r1} + F \cdot (x_{r2} - x_{r3})
+$$
+
+$$
+u_i = \text{crossover}(x_i, v_i, CR)
+$$
+
+Donde $F$ = factor de escala, $CR$ = tasa de crossover, $r1, r2, r3$ = indices aleatorios.
+
+**Ventaja**: Muy robusto, pocos hiperparametros, funciona sorprendentemente bien en alta dimension.
+
+## Particle Swarm Optimization (PSO)
+
+Cada particula tiene posicion y velocidad:
+
+$$
+v_i^{t+1} = w \cdot v_i^t + c_1 r_1 (p_i^{\text{best}} - x_i^t) + c_2 r_2 (g^{\text{best}} - x_i^t)
+$$
+
+$$
+x_i^{t+1} = x_i^t + v_i^{t+1}
+$$
+
+Donde:
+- $p_i^{\text{best}}$ = mejor posicion historica de la particula
+- $g^{\text{best}}$ = mejor posicion global de todo el enjambre
+
+## Meta-Learned Evolution: Discovered ES y Learned GA
+
+### Discovered ES (EvoTF)
+Usa meta-learning para **descubrir nuevas estrategias de evolucion**. Un modelo (Transformer) aprende a generar los updates de ES optimamente.
+
+### Learned ES / Learned GA
+Aprende los **operadores** de mutacion, crossover y seleccion con una red neuronal entrenada sobre un conjunto de problemas de optimizacion.
+
+**Implicacion**: La propia evolucion puede ser **meta-aprendida** — un nivel de recursion fascinante.
+
+## El Ciclo Ask-Eval-Tell
+
+Todos los algoritmos en evosax siguen el mismo patron:
+
+```python
+# Inicializar
+strategy = CMA_ES(population_size=64, num_dims=1000)
+state = strategy.initialize(rng_key)
+
+# Loop evolutivo
+for generation in range(num_generations):
+    # ASK: generar candidatos
+    candidates, state = strategy.ask(rng_key, state)
+    
+    # EVAL: evaluar fitness (tu funcion, no diferenciable OK)
+    fitness = evaluate(candidates)
+    
+    # TELL: actualizar estrategia
+    state = strategy.tell(candidates, fitness, state)
+
+# Mejor solucion
+best = state.best_member
+```
+
+Este patron unificado es lo que hace evosax tan potente: **30+ algoritmos con la misma interfaz**.
+
+## Neuroevolucion: Optimizando Redes Neuronales sin Gradientes
+
+La neuroevolucion aplica algoritmos evolutivos para:
+
+1. **Optimizar pesos** de redes neuronales (alternativa a backprop)
+2. **Buscar arquitecturas** (NAS - Neural Architecture Search)
+3. **Optimizar hiperparametros** (learning rate, etc.)
+4. **Entrenar politicas de RL** (sin policy gradient)
+
+### Ventajas sobre backprop para ciertos problemas:
+- Funciona con **funciones de fitness no diferenciables** (reward en RL, metricas discretas)
+- **Paralelismo masivo**: cada evaluacion es independiente
+- **Explora mejor** el paisaje de loss (no se atasca en minimos locales)
+- Puede optimizar **arquitectura y pesos simultaneamente**
+
+### Limitacion principal:
+- **Escala mal** con el numero de parametros ($>10^6$ es dificil para ES puro)
+- Necesita muchas evaluaciones
+- No aprovecha la estructura del gradiente cuando esta disponible

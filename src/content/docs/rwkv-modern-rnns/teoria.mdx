@@ -1,0 +1,271 @@
+---
+title: "RWKV y RNNs Modernos - Teoria"
+description: "Fundamentos matematicos de RWKV, Mamba, State Space Models y RNNs modernos"
+---
+
+# RWKV y RNNs Modernos - Fundamentos Teoricos
+
+## El Renacimiento de las RNNs
+
+Los Transformers dominaron NLP desde 2017, pero su costo cuadratico $O(n^2)$ motivo la busqueda de alternativas. Entre 2022-2024, surgieron modelos con complejidad **lineal** $O(n)$ que compiten en calidad:
+
+| Modelo | Año | Complejidad | Tipo |
+|---|---|---|---|
+| Transformer | 2017 | $O(n^2 d)$ | Atencion global |
+| S4 | 2022 | $O(n \log n)$ | State Space Model |
+| H3 | 2023 | $O(n \log n)$ | SSM hibrido |
+| RWKV | 2023 | $O(n d)$ | RNN linear attention |
+| Mamba | 2023 | $O(n d)$ | SSM selectivo |
+| Mamba-2 | 2024 | $O(n d)$ | SSM = linear attention |
+| xLSTM | 2024 | $O(n d)$ | LSTM extendido |
+
+## State Space Models (SSMs): La Base Teorica
+
+Un SSM continuo se define como:
+
+$$
+h'(t) = Ah(t) + Bx(t)
+$$
+
+$$
+y(t) = Ch(t) + Dx(t)
+$$
+
+Donde:
+- $h(t) \in \mathbb{R}^N$ = estado oculto
+- $x(t) \in \mathbb{R}$ = entrada
+- $y(t) \in \mathbb{R}$ = salida
+- $A \in \mathbb{R}^{N \times N}$ = matriz de transicion de estado
+- $B \in \mathbb{R}^{N \times 1}$ = matriz de entrada
+- $C \in \mathbb{R}^{1 \times N}$ = matriz de salida
+- $D \in \mathbb{R}$ = skip connection
+
+### Discretizacion
+
+Para usar en secuencias discretas, se discretiza con paso $\Delta$:
+
+$$
+\bar{A} = \exp(\Delta A) \approx (I + \Delta A / 2)(I - \Delta A / 2)^{-1} \quad \text{(bilinear)}
+$$
+
+$$
+\bar{B} = (\Delta A)^{-1}(\exp(\Delta A) - I) \cdot \Delta B \approx \Delta B \quad \text{(simplificado)}
+$$
+
+La recurrencia discreta resultante:
+
+$$
+h_t = \bar{A} h_{t-1} + \bar{B} x_t
+$$
+
+$$
+y_t = C h_t + D x_t
+$$
+
+**Esto es una RNN** — pero con matrices $\bar{A}, \bar{B}$ derivadas de la teoria de sistemas dinamicos.
+
+### Dual View: Recurrencia vs Convolucion
+
+El mismo modelo se puede computar como:
+
+**Recurrencia** (para inferencia, $O(n)$):
+$$
+h_t = \bar{A} h_{t-1} + \bar{B} x_t, \quad y_t = C h_t
+$$
+
+**Convolucion** (para entrenamiento, paralelizable):
+$$
+y = x * \bar{K}, \quad \bar{K} = (C\bar{B}, C\bar{A}\bar{B}, C\bar{A}^2\bar{B}, ...)
+$$
+
+Esta **dualidad** es la razon por la que los SSMs escalan: se entrenan como CNNs (paralelo) y se infieren como RNNs (eficiente).
+
+## S4: Structured State Spaces for Sequences
+
+El breakthrough de **Albert Gu et al. (2022)**.
+
+### HiPPO Matrix
+
+La clave de S4 es inicializar $A$ con la **HiPPO matrix** (High-order Polynomial Projection Operator):
+
+$$
+A_{nk} = \begin{cases}
+-(2n+1)^{1/2}(2k+1)^{1/2} & \text{si } n > k \\
+-(n+1) & \text{si } n = k \\
+0 & \text{si } n < k
+\end{cases}
+$$
+
+Esta matriz tiene la propiedad de que el estado $h_t$ **comprime optimalamente** la historia de la secuencia en polinomios de Legendre. Es decir, $h_t$ contiene la mejor aproximacion polinomial de $x_1, ..., x_t$.
+
+### Diagonal + Low-Rank
+
+Para eficiencia, S4 descompone $A$ como:
+
+$$
+A = \Lambda - PQ^*
+$$
+
+donde $\Lambda$ es diagonal. Esto permite computar el kernel $\bar{K}$ en $O(N \log N)$ con FFT.
+
+## Mamba: El Breakthrough
+
+**Gu & Dao (2023)**. La innovacion clave: hacer que $B$, $C$ y $\Delta$ **dependan del input**.
+
+### Selective State Spaces
+
+En S4, $A, B, C$ son fijos (content-independent). En Mamba:
+
+$$
+B_t = \text{Linear}_B(x_t), \quad C_t = \text{Linear}_C(x_t), \quad \Delta_t = \text{softplus}(\text{Linear}_\Delta(x_t))
+$$
+
+$$
+\bar{A}_t = \exp(\Delta_t \cdot A), \quad \bar{B}_t = \Delta_t \cdot B_t
+$$
+
+$$
+h_t = \bar{A}_t h_{t-1} + \bar{B}_t x_t
+$$
+
+**Por que esto importa**: El modelo puede decidir **que informacion guardar y que olvidar** en cada paso, como los gates de un LSTM pero dentro del framework SSM.
+
+### Selective Scan
+
+El problema: con $B, C$ dependientes del input, pierdas la representacion como convolucion. No puedes paralelizar con FFT.
+
+**Solucion**: Implementar un **parallel scan** eficiente en CUDA que aprovecha la estructura del hardware GPU.
+
+### Mamba Block
+
+```
+Input x
+   ↓
+[Linear projection → expand x2]
+   ↓                  ↓
+[Conv1d]          [SiLU gate]
+   ↓                  |
+[SSM (selective)]     |
+   ↓                  |
+[× gate] ←───────────┘
+   ↓
+[Linear projection → compress]
+   ↓
+Output
+```
+
+## RWKV: Reinventing RNNs for the Transformer Era
+
+**Bo Peng et al. (2023)**. Un enfoque diferente al mismo problema.
+
+### Mecanismo WKV
+
+La formula central de RWKV es el **Weighted Key-Value** (WKV):
+
+$$
+wkv_t = \frac{\sum_{i=1}^{t-1} e^{-(t-1-i)w + k_i} v_i + e^{u + k_t} v_t}{\sum_{i=1}^{t-1} e^{-(t-1-i)w + k_i} + e^{u + k_t}}
+$$
+
+Donde:
+- $w$ = decay factor (aprendido por canal)
+- $k_i, v_i$ = key y value del token $i$ (como en attention)
+- $u$ = bonus para el token actual
+
+**Interpretacion**: Es una **atencion lineal con decaimiento exponencial**. Los tokens mas recientes tienen mas peso, con decaimiento controlado por $w$.
+
+### Recurrencia eficiente
+
+Se puede computar incrementalmente:
+
+$$
+a_t = e^{-w} a_{t-1} + e^{k_t} v_t
+$$
+
+$$
+b_t = e^{-w} b_{t-1} + e^{k_t}
+$$
+
+$$
+wkv_t = \frac{a_t}{b_t}
+$$
+
+Esto es $O(1)$ por token en inferencia (estado fijo, no crece).
+
+### RWKV Block
+
+```
+Input x
+   ↓
+[Token Shift (mezcla con token anterior)]
+   ↓
+[RWKV Time-mixing (WKV mechanism)]
+   ↓
+[Token Shift]
+   ↓
+[Channel-mixing (tipo FFN)]
+   ↓
+Output
+```
+
+## Mamba-2: La Unificacion
+
+**Dao & Gu (2024)** demostraron formalmente que:
+
+$$
+\text{SSMs (Mamba)} \equiv \text{Linear Attention} \equiv \text{Recurrent Models}
+$$
+
+Todos son formas del **Structured State Space Duality (SSD)**:
+
+$$
+Y = M \odot (XB^T)(XC^T)
+$$
+
+donde $M$ es una mascara estructurada (causal, etc.).
+
+Esto permite diseñar el modelo en cualquiera de las tres formas equivalentes y elegir la mas eficiente para cada fase (entrenamiento vs inferencia).
+
+## Otros Modelos Importantes
+
+### xLSTM (Hochreiter, 2024)
+
+El creador del LSTM vuelve con una version moderna:
+
+**sLSTM** (scalar): LSTM con normalizacion exponencial de gates
+**mLSTM** (matrix): LSTM con estado matricial (tipo fast weights)
+
+$$
+C_t = f_t \cdot C_{t-1} + i_t \cdot (v_t k_t^T) \quad \text{(mLSTM)}
+$$
+
+El mLSTM es conceptualmente un **fast weight** donde los pesos (la matriz $C$) se actualizan cada paso.
+
+### Griffin / RecurrentGemma (Google, 2024)
+
+Hibrido oficial de Google que mezcla:
+- **Gated Linear Recurrence** (tipo RWKV simplificado) para la mayoria de capas
+- **Local attention** (ventana pequeña) para pocas capas
+
+### RetNet (Microsoft, 2023)
+
+**Retention** = attention con decaimiento exponencial:
+
+$$
+\text{Retention}(X) = (QK^T \odot D) V
+$$
+
+donde $D$ es una mascara de decaimiento exponencial. Tiene forma dual: paralela (entrenamiento) y recurrente (inferencia).
+
+## Comparacion Completa
+
+| Modelo | Complejidad Train | Complejidad Infer | Estado | Selectividad | Paralelizable |
+|---|---|---|---|---|---|
+| Transformer | $O(n^2 d)$ | $O(n d)$ / token + KV-cache | No tiene | Atencion global | Si |
+| S4 | $O(n \log n \cdot d)$ | $O(d)$ / token | Si (fijo) | No | Si (conv) |
+| Mamba | $O(n d)$ | $O(d)$ / token | Si (selectivo) | Si (B,C,Δ) | Si (scan) |
+| RWKV | $O(n d)$ | $O(d)$ / token | Si (WKV) | Si (w,k) | Si |
+| Mamba-2 | $O(n d)$ | $O(d)$ / token | Si | Si | Si |
+| xLSTM | $O(n d)$ | $O(d)$ / token | Si (gates) | Si | Parcial |
+| Griffin | $O(n d + n w d)$ | $O(d)$ / token | Si | Si | Si |
+
+$w$ = tamano de ventana de attention local en Griffin.

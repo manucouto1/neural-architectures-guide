@@ -1,0 +1,285 @@
+---
+title: "Computacion Evolutiva - Aplicacion a LLMs"
+description: "Como aplicar computacion evolutiva para construir y mejorar LLMs"
+---
+
+# Computacion Evolutiva - Aplicacion a LLMs
+
+## Donde Encaja la Evolucion en el Pipeline de un LLM
+
+La computacion evolutiva no reemplaza backprop para entrenar LLMs (no escala a billones de parametros). Pero es **insustituible** en varias fases criticas:
+
+```
+Diseño de LLM
+├── 1. Busqueda de Arquitectura (NAS) ← EVOLUCION
+├── 2. Optimizacion de Hiperparametros ← EVOLUCION
+├── 3. Entrenamiento de Pesos ← Backprop (Adam, etc.)
+├── 4. Fine-tuning / Alignment ← Parcialmente EVOLUCION
+├── 5. Prompt Optimization ← EVOLUCION
+└── 6. LLM como operador evolutivo ← FUSION
+```
+
+## 1. Neural Architecture Search (NAS) para LLMs
+
+### Que se busca:
+- Numero y tipo de capas (SSM vs Attention vs FFN)
+- Dimensiones (d_model, d_ffn, n_heads)
+- Ratio de capas SSM/Attention en hibridos
+- Configuracion de MoE (numero de expertos, top-k)
+- Skip connections, normalization placement
+
+### Como funciona con evolucion:
+
+```python
+import jax
+from evosax import CMA_ES
+
+# Codificar arquitectura como vector
+# [d_model, n_layers, n_heads, ratio_ssm, d_state, ffn_mult, ...]
+strategy = CMA_ES(population_size=32, num_dims=8)
+state = strategy.initialize(jax.random.PRNGKey(0))
+
+def decode_architecture(genome):
+    """Convertir vector continuo a configuracion de arquitectura"""
+    return {
+        "d_model": int(256 * (1 + genome[0])),    # 256-512
+        "n_layers": int(8 + 24 * genome[1]),       # 8-32
+        "n_heads": int(4 + 12 * genome[2]),        # 4-16
+        "ratio_ssm": genome[3],                     # 0-1
+        "d_state": int(8 + 56 * genome[4]),        # 8-64
+        "ffn_mult": 2 + 2 * genome[5],             # 2-4
+    }
+
+def fitness_fn(genome):
+    """Entrenar mini-modelo y evaluar"""
+    config = decode_architecture(genome)
+    model = build_model(config)
+    # Entrenar por N steps (proxy corto)
+    loss = train_short(model, steps=1000)
+    params = count_params(model)
+    # Fitness: balance calidad vs eficiencia
+    return -(loss + 0.01 * params / 1e6)  # minimizar
+
+# Evolucionar
+for gen in range(100):
+    rng, rng_ask = jax.random.split(rng)
+    candidates, state = strategy.ask(rng_ask, state)
+    fitness = jax.vmap(fitness_fn)(candidates)
+    state = strategy.tell(candidates, fitness, state)
+
+best_arch = decode_architecture(state.best_member)
+```
+
+### Ejemplo real: OpenELM (Apple, 2024)
+Apple uso busqueda evolutiva para encontrar la configuracion optima de capas en su LLM. Resultado: configuraciones no uniformes (capas con diferente ancho) que superan a diseños uniformes con el mismo FLOP budget.
+
+## 2. Optimizacion de Hiperparametros
+
+Los hiperparametros de entrenamiento de LLMs son criticos y no diferenciables:
+
+| Hiperparametro | Rango tipico | Por que evolucion |
+|---|---|---|
+| Learning rate schedule | Cosine, linear, WSD | Espacio discreto + continuo |
+| Batch size schedule | Variable | No diferenciable |
+| Warmup steps | 100 - 5000 | Interaccion con otros HPs |
+| Weight decay | 0.01 - 0.3 | Depende de la arquitectura |
+| Ratio SSM/Attention | 0.5 - 0.95 | Discreto |
+| MoE config | (n_experts, top_k) | Combinatorio |
+
+```python
+from evosax import Sep_CMA_ES
+
+# Buscar hiperparametros optimos
+strategy = Sep_CMA_ES(population_size=16, num_dims=6)
+state = strategy.initialize(jax.random.PRNGKey(0))
+
+def hp_fitness(genome):
+    lr = 10 ** (-5 + 3 * genome[0])        # 1e-5 a 1e-2
+    wd = 10 ** (-3 + 2 * genome[1])        # 1e-3 a 0.1
+    warmup = int(100 + 4900 * genome[2])   # 100-5000
+    batch = int(2 ** (6 + 4 * genome[3]))  # 64-1024
+    # ... entrenar y evaluar
+    return -val_loss
+```
+
+## 3. Evolucion para Alignment / RLHF
+
+### Optimizar reward models sin gradientes
+
+Cuando el reward model no es diferenciable (evaluacion humana, metricas discretas, safety checks):
+
+$$
+\max_\theta \mathbb{E}_{x \sim p_\theta}[R(x)]
+$$
+
+donde $R$ puede ser:
+- Puntuacion humana (no diferenciable)
+- Safety classifier (binario)
+- Combinacion de metricas discretas
+
+ES puede optimizar directamente sobre estas metricas sin necesitar un reward model diferenciable.
+
+### Red Teaming Evolutivo
+
+Usar evolucion para encontrar **adversarial prompts** que exponen vulnerabilidades:
+
+```python
+# Evolucionar prompts adversariales
+strategy = OpenES(population_size=64, num_dims=prompt_embedding_dim)
+
+def adversarial_fitness(prompt_embedding):
+    prompt = decode_to_text(prompt_embedding)
+    response = llm.generate(prompt)
+    # Fitness: lo "malo" de la respuesta (para encontrar vulnerabilidades)
+    return toxicity_score(response) + unsafe_score(response)
+```
+
+## 4. Prompt Optimization / EvoPrompt
+
+Evolucionar prompts automaticamente para maximizar rendimiento:
+
+$$
+\text{prompt}^* = \arg\max_{\text{prompt}} \mathbb{E}_{x \sim \text{test}}[\text{accuracy}(LLM(\text{prompt}, x))]
+$$
+
+```python
+# Evolucion de prompts (representados como embeddings o tokens)
+population = [generate_random_prompt() for _ in range(32)]
+
+for gen in range(100):
+    # Evaluar cada prompt
+    fitness = [evaluate_prompt(p, test_set) for p in population]
+    
+    # Seleccionar mejores
+    parents = select_top_k(population, fitness, k=8)
+    
+    # Mutacion: usar LLM para generar variantes
+    children = []
+    for parent in parents:
+        child = llm.generate(f"Improve this prompt: {parent}")
+        children.append(child)
+    
+    population = parents + children
+```
+
+### EvoPrompting (NeurIPS 2023)
+Usa el propio LLM como operador de mutacion: el LLM recibe un prompt o codigo y genera una variante mejorada. La evolucion selecciona las mejores variantes.
+
+## 5. FunSearch: LLM x Evolucion = Descubrimiento
+
+El paradigma mas revolucionario — **usar el LLM como motor de variacion dentro de un loop evolutivo**:
+
+```
+Loop FunSearch:
+1. LLM genera candidatos (funciones, codigo, soluciones)
+2. Evaluador automatico puntua cada candidato
+3. Evolucion selecciona los mejores
+4. Los mejores se dan como contexto al LLM
+5. LLM genera nuevos candidatos inspirados en los mejores
+6. Repetir
+```
+
+### Por que funciona:
+- El LLM aporta **conocimiento del mundo** (sabe que "tiene sentido")
+- La evolucion aporta **busqueda sistematica** (no se conforma con "bueno")
+- Juntos superan las limitaciones de cada uno
+
+### Resultados: DeepMind descubrio funciones matematicas nuevas (cap set problem) que **superan las mejores conocidas por humanos**.
+
+## 6. Neuroevolucion de Componentes de LLM
+
+No puedes evolucionar los 7B parametros de un LLM. Pero SI puedes evolucionar componentes pequeños:
+
+### Adaptadores evolutivos (LoRA evolutiva)
+
+```python
+# Evolucionar adaptadores LoRA en vez de entrenarlos
+strategy = CMA_ES(population_size=32, num_dims=rank * d_model * 2)
+
+def adapter_fitness(flat_adapter):
+    lora_A, lora_B = reshape(flat_adapter, (rank, d_model), (d_model, rank))
+    # Aplicar adaptador al modelo base
+    adapted_model = base_model + lora_A @ lora_B
+    return evaluate(adapted_model, task_data)
+```
+
+### Evolucionar routing en MoE
+
+```python
+# Optimizar el router de Mixture of Experts
+strategy = SNES(population_size=64, num_dims=router_params)
+
+def router_fitness(router_weights):
+    model.router.load(router_weights)
+    return evaluate_perplexity(model, val_data)
+```
+
+### Evolucionar funciones de activacion (con KANs)
+
+Combinar KANs + evolucion: evolucionar las funciones base de las aristas KAN.
+
+## Tabla: Donde Usar Evolucion en LLMs
+
+| Aplicacion | Algoritmo recomendado | Dimensiones | Viabilidad |
+|---|---|---|---|
+| NAS (arquitectura) | CMA-ES, AmoebaNet | 5-20 | Probada (OpenELM, etc.) |
+| Hiperparametros | Sep-CMA-ES, DE | 5-50 | Standard |
+| Prompt optimization | GA + LLM como mutador | Variable | Activa (EvoPrompt) |
+| Red teaming | OpenAI-ES | Embedding dim | Emergente |
+| LoRA evolutiva | CMA-ES, SNES | ~10K-100K | Experimental |
+| MoE routing | SNES, xNES | ~1K-10K | Experimental |
+| Discovery (FunSearch) | GA + LLM | N/A (texto) | Breakthrough (Nature) |
+| Reward hacking detection | DE, PSO | Variable | Emergente |
+| Entrenamiento completo | No viable | >1B | No escala |
+
+## Integracion con evosax: Stack Completo
+
+```python
+# Stack completo para optimizar un componente de LLM con evosax
+import jax
+import jax.numpy as jnp
+from evosax import CMA_ES
+from transformers import AutoModel  # modelo base
+
+# 1. Cargar modelo base (congelado)
+base_model = load_frozen_model("meta-llama/Llama-3.1-8B")
+
+# 2. Definir que optimizar (ej: configuracion de capas hibridas)
+num_layers = 32
+# genome[i] = 0 → SSM, 1 → Attention para capa i
+strategy = CMA_ES(population_size=16, num_dims=num_layers)
+
+# 3. Fitness: entrenar proxy corto + evaluar
+@jax.jit
+def fitness(genome):
+    # Decodificar: que capas son SSM y cuales Attention
+    layer_types = ["ssm" if g < 0.5 else "attn" for g in genome]
+    model = build_hybrid(base_weights, layer_types)
+    val_loss = quick_eval(model, val_data, steps=100)
+    inference_speed = measure_throughput(model)
+    # Multi-objetivo: calidad + velocidad
+    return -(val_loss - 0.1 * jnp.log(inference_speed))
+
+# 4. Evolucionar
+state = strategy.initialize(jax.random.PRNGKey(0))
+for gen in range(200):
+    rng, rng_ask = jax.random.split(rng)
+    candidates, state = strategy.ask(rng_ask, state)
+    fitness_scores = jax.vmap(fitness)(candidates)
+    state = strategy.tell(candidates, fitness_scores, state)
+
+# 5. Resultado: configuracion optima de capas hibridas
+best_config = state.best_member
+```
+
+## Veredicto
+
+La computacion evolutiva es **complementaria, no competidora** de backprop para LLMs. Su valor esta en:
+
+1. **NAS**: Encontrar la mejor arquitectura (probado, impactante)
+2. **Hiperparametros**: Optimizar lo que no es diferenciable (standard)
+3. **LLM x Evolucion**: El LLM como motor de busqueda evolutiva (revolucionario)
+4. **Alignment sin gradientes**: Optimizar metricas no diferenciables
+5. **Componentes pequeños**: Evolucionar adaptadores, routers, prompts
+
+> La fusión LLM + Evolucion (FunSearch, EvoPrompting) es probablemente **la forma mas poderosa de busqueda automatica** que existe hoy. Si estas construyendo un LLM de nueva generacion, usa evolucion para diseñar la arquitectura y optimizar los componentes que backprop no puede tocar.

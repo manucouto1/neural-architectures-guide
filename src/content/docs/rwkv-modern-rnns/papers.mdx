@@ -1,0 +1,111 @@
+---
+title: "RWKV y RNNs Modernos - Papers"
+description: "Papers fundamentales y recientes sobre RWKV, Mamba, SSMs"
+---
+
+# RWKV y RNNs Modernos - Papers
+
+## Papers Fundamentales
+
+### "Efficiently Modeling Long Sequences with Structured State Spaces" (S4)
+- **Autores**: Albert Gu, Karan Goel, Christopher Re
+- **Año**: 2022
+- **Venue**: ICLR 2022 (Outstanding Paper Award)
+- **Link**: https://arxiv.org/abs/2111.00396
+- **Contribucion**: EL paper que inicio la revolucion SSM. Introduce S4 con la HiPPO matrix para comprimir historias largas, la parametrizacion diagonal + low-rank para eficiencia, y la dualidad recurrencia/convolucion. State-of-the-art en Long Range Arena. Primer modelo subquadratico competitivo en secuencias largas.
+
+### "Mamba: Linear-Time Sequence Modeling with Selective State Spaces"
+- **Autores**: Albert Gu, Tri Dao
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2312.00752
+- **Contribucion**: EL breakthrough. Hace que los parametros del SSM ($B, C, \Delta$) dependan del input (selectividad). Implementa un parallel scan eficiente en CUDA. Primer SSM que iguala a Transformers en calidad de lenguaje a escala. Demuestra que los SSMs selectivos son una alternativa real a la atencion.
+
+### "RWKV: Reinventing RNNs for the Transformer Era"
+- **Autores**: Bo Peng, Eric Alcaide, Quentin Anthony, et al.
+- **Año**: 2023
+- **Venue**: EMNLP 2023 Findings
+- **Link**: https://arxiv.org/abs/2305.13048
+- **Contribucion**: Propone RWKV — un modelo tipo RNN con mecanismo WKV (atencion lineal con decaimiento exponencial). Entrenado hasta 14B parametros, competitivo con Transformers. Paralelizable en entrenamiento. Costo de inferencia O(1) por token. Proyecto open-source muy activo.
+
+### "Hungry Hungry Hippos: Towards Language Modeling with State Space Models" (H3)
+- **Autores**: Daniel Y. Fu, Tri Dao, Khaled K. Saab, et al.
+- **Año**: 2023
+- **Venue**: ICLR 2023
+- **Link**: https://arxiv.org/abs/2212.14052
+- **Contribucion**: Hibrido SSM + attention que demuestra por primera vez que los SSMs pueden funcionar para lenguaje (no solo Long Range Arena). Identifica que SSMs fallan en "recall" (recuperar informacion especifica) y propone mitigaciones.
+
+### "Hyena Hierarchy: Towards Larger Convolutional Language Models"
+- **Autores**: Michael Poli, Stefano Massaroli, et al.
+- **Año**: 2023
+- **Venue**: ICML 2023
+- **Link**: https://arxiv.org/abs/2302.10866
+- **Contribucion**: Reemplaza attention por filtros convolucionales largos parametrizados por una red neuronal. $O(n \log n)$. Competitivo en perplexity con Transformers hasta cierta escala.
+
+## Papers Recientes (2024-2025)
+
+### "Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality" (Mamba-2)
+- **Autores**: Tri Dao, Albert Gu
+- **Año**: 2024
+- **Venue**: ICML 2024
+- **Link**: https://arxiv.org/abs/2405.21060
+- **Contribucion**: Demuestra formalmente que SSMs y linear attention son equivalentes (Structured State Space Duality). Mamba-2 es 2-8x mas rapido que Mamba-1 gracias a esta insight. Permite usar hardware-efficient matrix multiplication. Paper teoricamente profundo y practicamente impactante.
+
+### "Eagle and Finch: RWKV with Matrix-Valued States and Dynamic Recurrence" (RWKV-5/6)
+- **Autores**: Bo Peng et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2404.05892
+- **Contribucion**: RWKV-5 (Eagle) y RWKV-6 (Finch) introducen estados matriciales y recurrencia dinamica. Mejoran significativamente sobre RWKV-4, cerrando la brecha con Transformers.
+
+### "xLSTM: Extended Long Short-Term Memory"
+- **Autores**: Maximilian Beck, Korbinian Poeppel, Markus Spanring, et al. (Sepp Hochreiter's group)
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2405.04517
+- **Contribucion**: El creador del LSTM vuelve con una version moderna. sLSTM (scalar, con exponential gating) y mLSTM (matrix, con estado matricial tipo fast weights). Competitivo con Mamba y Transformers en benchmarks de lenguaje.
+
+### "Griffin: Mixing Gated Linear Recurrences with Local Attention for Efficient Language Models"
+- **Autores**: Soham De, Samuel L. Smith, et al. (Google DeepMind)
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2402.19427
+- **Contribucion**: Hibrido de recurrencia lineal + attention local de Google. Base de RecurrentGemma. Demuestra que pocas capas de attention local son suficientes para resolver el problema de recall de los SSMs puros.
+
+### "Jamba: A Hybrid Transformer-Mamba Language Model"
+- **Autores**: Opher Lieber, Barak Lenz, et al. (AI21 Labs)
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2403.19887
+- **Contribucion**: Primer modelo comercial hibrido Mamba-Transformer con MoE. 52B parametros (12B activos). Demuestra que la combinacion SSM + attention + MoE es viable a escala comercial. Context de 256K tokens.
+
+### "Zamba: A Compact 7B SSM Hybrid Model"
+- **Autores**: Zyphra
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2405.16712
+- **Contribucion**: Hibrido SSM con shared attention layer (una sola capa de attention compartida entre todas las posiciones). Muy eficiente en parametros.
+
+### "RetNet: Retentive Network: A Successor to Transformer for Large Language Models"
+- **Autores**: Yutao Sun, Li Dong, et al. (Microsoft)
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2307.08621
+- **Contribucion**: Propone "retention" como alternativa a attention: attention con decaimiento exponencial. Triple forma: paralela, recurrente y chunk-wise. Competitivo en benchmarks.
+
+### "Based: Simple Linear Attention Language Models Balance the Recall-Throughput Tradeoff"
+- **Autores**: Simran Arora et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2402.18668
+- **Contribucion**: Analiza formalmente el tradeoff recall vs throughput en modelos lineales. Propone combinaciones especificas de linear attention que mejoran recall sin sacrificar velocidad.
+
+## Mapa de Lectura
+
+```
+S4 (Gu 2022) ← fundamentos SSM
+    ├── H3 (Fu 2023) ← SSM para lenguaje
+    ├── Hyena (Poli 2023) ← convolucion larga
+    └── Mamba (Gu & Dao 2023) ← EL breakthrough
+         └── Mamba-2 (Dao & Gu 2024) ← unificacion
+              └── Jamba (AI21 2024) ← hibrido comercial
+
+RWKV (Peng 2023) ← linea paralela
+    └── RWKV-5/6 (Peng 2024) ← estado matricial
+
+xLSTM (Hochreiter 2024) ← LSTM revived
+Griffin (Google 2024) ← hibrido de Google
+RetNet (Microsoft 2023) ← retention
+```

@@ -1,0 +1,264 @@
+---
+title: "Computacion Evolutiva - Frameworks y evosax"
+description: "evosax y otras librerias para computacion evolutiva acelerada por hardware"
+---
+
+# Computacion Evolutiva - Frameworks
+
+## evosax: Evolution Strategies en JAX
+
+- **Repo**: https://github.com/RobertTLange/evosax
+- **Autor**: Robert Tjarko Lange
+- **Instalacion**: `pip install evosax`
+- **Requisitos**: Python 3.10+, JAX
+- **Clave**: Todos los algoritmos compilados con XLA — ejecucion en CPU, GPU y TPU
+
+### Catalogo Completo de Algoritmos
+
+#### Distribution-Based (25 algoritmos)
+
+Mantienen y actualizan una **distribucion de probabilidad** sobre el espacio de soluciones.
+
+| Algoritmo | Clase | Descripcion | Escala |
+|---|---|---|---|
+| **CMA-ES** | `CMA_ES` | Covariance Matrix Adaptation — el gold standard | Hasta ~1K dims |
+| **Sep-CMA-ES** | `Sep_CMA_ES` | CMA-ES con covarianza diagonal | Hasta ~100K dims |
+| **xNES** | `xNES` | Exponential Natural ES | Media |
+| **SNES** | `SNES` | Separable NES | Alta dimension |
+| **CR-FM-NES** | `CR_FM_NES` | Full-Matrix NES con Cholesky | Media |
+| **MA-ES** | `MA_ES` | Matrix Adaptation ES | Media |
+| **LM-MA-ES** | `LM_MA_ES` | Limited-Memory MA-ES | Alta dimension |
+| **Rm-ES** | `Rm_ES` | Reciprocal Mutation ES | Media |
+| **OpenAI-ES** | `Open_ES` | ES simplificada para RL/neuroevolucion | Alta dimension |
+| **ARS** | `ARS` | Augmented Random Search | Alta dimension |
+| **PGPE** | `PGPE` | Policy Gradient Parameter Exploration | RL |
+| **Persistent ES** | `Persistent_ES` | ES con perturbaciones persistentes | RL largo horizonte |
+| **Noise-Reuse ES** | `Noise_Reuse_ES` | ES con reutilizacion de ruido | RL |
+| **Guided ES** | `Guided_ES` | ES + gradientes parciales | Hibrido |
+| **ASEBO** | `ASEBO` | Active Subspace ES | Alta dimension |
+| **ESMC** | `ESMC` | ES con Model Comparison | Media |
+| **Discovered ES** | `Discovered_ES` | ES descubierta por meta-learning | Meta-learned |
+| **Learned ES** | `Learned_ES` | ES con operadores aprendidos | Meta-learned |
+| **EvoTF** | `EvoTF_ES` | Evolution via Transformer | Meta-learned |
+| **iAMaLGaM-Full** | `iAMaLGaM_Full` | Mixture of Gaussians (full) | Media |
+| **iAMaLGaM-Uni** | `iAMaLGaM_Uni` | Mixture of Gaussians (univariate) | Alta dimension |
+| **Gradientless Descent** | `GradientlessDescent` | Descenso sin gradiente | Baja dimension |
+| **Simulated Annealing** | `SimulatedAnnealing` | Recocido simulado | Combinatoria |
+| **Hill Climbing** | `HillClimbing` | Escalada de colinas | Baseline |
+| **Random Search** | `RandomSearch` | Busqueda aleatoria | Baseline |
+
+Variantes adicionales en `sv/`: **SV-CMA-ES** y **SV-OpenAI-ES** (State-Variable versions).
+
+#### Population-Based (8 algoritmos)
+
+Mantienen una **poblacion explicita** con operadores geneticos.
+
+| Algoritmo | Clase | Descripcion |
+|---|---|---|
+| **Simple GA** | `Simple_GA` | Algoritmo genetico clasico |
+| **MR15-GA** | `MR15_GA` | GA con tasa de mutacion (Rechenberg 2015) |
+| **SAMR-GA** | `SAMR_GA` | Self-Adaptive Mutation Rate GA |
+| **GESMR-GA** | `GESMR_GA` | Guided ES + Mutation Rate GA |
+| **Learned GA** | `Learned_GA` | GA con operadores meta-aprendidos |
+| **Differential Evolution** | `DE` | Evolucion diferencial |
+| **Diffusion Evolution** | `Diffusion_Evolution` | Evolucion por difusion |
+| **PSO** | `PSO` | Particle Swarm Optimization |
+
+### API: El Ciclo Ask-Eval-Tell
+
+```python
+import jax
+import jax.numpy as jnp
+from evosax import CMA_ES
+
+# Configurar
+strategy = CMA_ES(population_size=64, num_dims=100)
+rng = jax.random.PRNGKey(0)
+state = strategy.initialize(rng)
+
+# Funcion de fitness (ejemplo: Rastrigin)
+def fitness_fn(x):
+    return jnp.sum(x**2 - 10 * jnp.cos(2 * jnp.pi * x) + 10, axis=-1)
+
+# Loop evolutivo
+for gen in range(500):
+    rng, rng_ask = jax.random.split(rng)
+    candidates, state = strategy.ask(rng_ask, state)
+    fitness = fitness_fn(candidates)
+    state = strategy.tell(candidates, fitness, state)
+
+print(f"Best fitness: {state.best_fitness}")
+print(f"Best solution: {state.best_member[:5]}...")
+```
+
+### JIT Compilation: Velocidad Maxima
+
+```python
+import jax
+
+# Compilar todo el loop con JAX JIT
+@jax.jit
+def evolve_step(rng, state):
+    rng, rng_ask = jax.random.split(rng)
+    candidates, state = strategy.ask(rng_ask, state)
+    fitness = fitness_fn(candidates)
+    state = strategy.tell(candidates, fitness, state)
+    return rng, state
+
+# Ejecutar miles de generaciones en milisegundos
+for gen in range(10000):
+    rng, state = evolve_step(rng, state)
+```
+
+### Vectorizacion con vmap: Multiples Runs en Paralelo
+
+```python
+# Ejecutar 32 runs independientes en paralelo
+@jax.vmap
+def run_evolution(rng):
+    state = strategy.initialize(rng)
+    for _ in range(500):
+        rng, state = evolve_step(rng, state)
+    return state.best_fitness
+
+rngs = jax.random.split(jax.random.PRNGKey(0), 32)
+all_best = run_evolution(rngs)  # 32 resultados en paralelo
+```
+
+### Neuroevolucion: Entrenar una Red Neuronal
+
+```python
+import jax
+import jax.numpy as jnp
+from evosax import OpenES
+from flax import linen as nn
+
+# Definir red neuronal
+class MLP(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        x = nn.Dense(64)(x)
+        x = nn.relu(x)
+        x = nn.Dense(32)(x)
+        x = nn.relu(x)
+        x = nn.Dense(1)(x)
+        return x
+
+# Contar parametros
+model = MLP()
+params = model.init(jax.random.PRNGKey(0), jnp.zeros(10))
+num_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
+
+# Crear estrategia evolutiva
+strategy = OpenES(population_size=128, num_dims=num_params)
+state = strategy.initialize(jax.random.PRNGKey(42))
+
+# Fitness: evaluar la red
+def fitness_fn(flat_params):
+    # Reconstruir params del vector plano
+    params = unflatten(flat_params)  # tu funcion de reshape
+    predictions = model.apply(params, X_train)
+    return -jnp.mean((predictions - y_train)**2)  # negativo porque ES maximiza
+
+# Evolucionar
+for gen in range(1000):
+    rng, rng_ask = jax.random.split(rng)
+    candidates, state = strategy.ask(rng_ask, state)
+    fitness = jax.vmap(fitness_fn)(candidates)  # evaluar toda la poblacion
+    state = strategy.tell(candidates, fitness, state)
+```
+
+## Otros Frameworks Relevantes
+
+### EvoJAX
+- **Repo**: https://github.com/google/evojax
+- **Autor**: Google
+- **Para**: Neuroevolucion a gran escala en JAX
+- **Diferencia con evosax**: Mas enfocado en RL y entornos de simulacion
+
+### PyGAD
+- **Repo**: https://github.com/ahmedfgad/GeneticAlgorithmPython
+- **Backend**: NumPy
+- **Para**: Algoritmos geneticos simples, buen material educativo
+- **Instalacion**: `pip install pygad`
+
+### DEAP (Distributed Evolutionary Algorithms in Python)
+- **Repo**: https://github.com/deap/deap
+- **Estado**: Maduro, ampliamente usado
+- **Para**: GA, GP (Genetic Programming), ES
+- **Limitacion**: No es JAX, no tiene aceleracion GPU
+
+### pycma
+- **Repo**: https://github.com/CMA-ES/pycma
+- **Autor**: Nikolaus Hansen (inventor de CMA-ES)
+- **Para**: Implementacion de referencia de CMA-ES
+- **Instalacion**: `pip install cma`
+
+```python
+import cma
+# Optimizar una funcion
+es = cma.CMAEvolutionStrategy([0] * 100, 0.5)  # 100 dimensiones
+es.optimize(cma.ff.rastrigin)
+es.result.xbest  # mejor solucion
+```
+
+### OpenAI Evolution Strategies
+- **Repo**: https://github.com/openai/evolution-strategies-starter
+- **Paper**: "Evolution Strategies as a Scalable Alternative to Reinforcement Learning" (2017)
+- **Para**: ES distribuida para RL
+
+### EvoTorch
+- **Repo**: https://github.com/nnaisense/evotorch
+- **Backend**: PyTorch
+- **Para**: Optimizacion evolutiva con integración nativa a PyTorch
+- **Instalacion**: `pip install evotorch`
+
+```python
+from evotorch import Problem
+from evotorch.algorithms import CMAES
+
+# Definir problema
+problem = Problem("min", lambda x: (x**2).sum(), 
+                  solution_length=100, dtype=torch.float32)
+
+# Optimizar con CMA-ES
+searcher = CMAES(problem, stdev_init=0.5, popsize=64)
+searcher.run(500)
+print(searcher.status)
+```
+
+## Comparacion de Frameworks
+
+| Framework | Backend | GPU/TPU | Algoritmos | Enfoque |
+|---|---|---|---|---|
+| **evosax** | JAX | Si (JIT+vmap) | 33+ | ES + GA completos |
+| **EvoTorch** | PyTorch | Si | ~10 | ES + integracion NN |
+| **EvoJAX** | JAX | Si | ~5 ES | Neuroevolucion/RL |
+| **DEAP** | NumPy | No | Muchos | GP + GA + ES |
+| **pycma** | NumPy | No | CMA-ES | Referencia CMA-ES |
+| **PyGAD** | NumPy | No | GA | Educativo |
+
+**Recomendacion**: **evosax** es la opcion mas completa y eficiente para experimentacion seria. Usa EvoTorch si ya estas en PyTorch y no quieres migrar a JAX.
+
+## Tip: Elegir el Algoritmo Correcto
+
+```
+¿Cuantas dimensiones?
+├── < 100:     CMA-ES (el mejor)
+├── 100-1000:  Sep-CMA-ES o xNES
+├── 1000-100K: OpenAI-ES o ARS
+└── > 100K:    OpenAI-ES distribuido + antithetic sampling
+
+¿Necesitas gradientes?
+├── No disponibles: ARS, CMA-ES, DE
+├── Disponibles parcialmente: Guided ES
+└── Disponibles completamente: ¿por que no usar Adam? (a menos que landscape sea muy no-convexo)
+
+¿Es RL?
+├── Si, horizonte corto: OpenAI-ES
+├── Si, horizonte largo: Persistent ES
+└── Si, continuo: PGPE
+
+¿Quieres meta-learning?
+└── Si: Discovered ES, Learned ES, EvoTF
+```

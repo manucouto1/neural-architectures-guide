@@ -1,0 +1,213 @@
+---
+title: "Fast Weights y Hebbian Learning - Teoria"
+description: "Fundamentos de pesos dinamicos y aprendizaje Hebbiano para redes neuronales"
+---
+
+# Fast Weights y Hebbian Learning - Fundamentos Teoricos
+
+## La Idea Revolucionaria
+
+En todo modelo de deep learning actual, los pesos son **estaticos despues del entrenamiento**:
+
+$$
+\text{Entrenamiento}: \theta^* = \arg\min_\theta \mathcal{L}(\theta; \mathcal{D}) \quad \xrightarrow{\text{deploy}} \quad \text{Inferencia}: f_{\theta^*}(x) \quad (\theta^* \text{ nunca cambia})
+$$
+
+Los fast weights rompen este paradigma:
+
+$$
+\text{Inferencia}: f_{\theta^* + \Delta\theta(x)}(x) \quad (\Delta\theta \text{ depende del input})
+$$
+
+**Los pesos cambian durante inferencia.** Esto permite que el modelo **aprenda en tiempo real**.
+
+## Historia: Schmidhuber (1991) → Hinton (2016) → TTT (2024)
+
+### Schmidhuber (1991): La idea original
+
+Jurgen Schmidhuber propuso en 1991-1992 redes que se modifican a si mismas:
+
+$$
+W_t = W_{t-1} + \Delta W(x_t; \text{slow weights})
+$$
+
+Una red (con "slow weights") genera las actualizaciones $\Delta W$ para otra red (con "fast weights"). Los slow weights se entrenan con backprop normal; los fast weights se actualizan en tiempo de ejecucion.
+
+### Hinton (2016): "Using Fast Weights to Store Temporary Memories"
+
+Ba, Hinton et al. formalizaron la idea como una **memoria asociativa Hebbiana**:
+
+$$
+A_t = \lambda A_{t-1} + \eta \cdot h_t h_t^T
+$$
+
+Donde:
+- $A_t$ = matriz de fast weights (memoria asociativa)
+- $\lambda$ = factor de decaimiento ($< 1$)
+- $\eta$ = learning rate de fast weights
+- $h_t$ = hidden state actual
+
+Para recuperar una memoria, se itera:
+
+$$
+h_{t+1}^{(s)} = f\left(\text{LayerNorm}\left(W h_t + A_t h_{t}^{(s)}\right)\right)
+$$
+
+**Interpretacion**: $A_t$ actua como una **memoria asociativa** que mapea vectores similares a $h_t$ a los estados con los que co-ocurrieron.
+
+## Regla de Hebb
+
+La base biologica:
+
+> "Neurons that fire together, wire together"
+
+$$
+\Delta w_{ij} = \eta \cdot x_i \cdot x_j
+$$
+
+En forma matricial:
+
+$$
+\Delta W = \eta \cdot x x^T \quad \text{(outer product)}
+$$
+
+Esto crea una **memoria asociativa**: si presentas $x$ de nuevo, $Wx = \eta x (x^T x) = \eta \|x\|^2 x$, recuperando (una version escalada de) $x$.
+
+### Hebbian vs Backprop
+
+| | Backprop | Hebbian |
+|---|---|---|
+| Señal de error | Global (loss) | Local (activaciones) |
+| Direccion | Top-down | Bottom-up |
+| Velocidad | Lenta (requiere forward + backward) | Rapida (un paso) |
+| Biologicamente plausible | No | Si |
+| Precision | Optima (gradiente exacto) | Sub-optima |
+| Online | No (necesita batches) | Si (token a token) |
+
+## Self-Attention como Fast Weights
+
+**Schlag et al. (2021)** demostraron una conexion profunda:
+
+La **linear attention** (sin softmax) es equivalente a fast weights:
+
+$$
+\text{LinearAttn}(Q, K, V) = \frac{\phi(Q) \left(\phi(K)^T V\right)}{\phi(Q) \phi(K)^T \mathbf{1}}
+$$
+
+Si definimos $A_t = \sum_{i=1}^{t} \phi(k_i) v_i^T$ (la "fast weight matrix"), entonces:
+
+$$
+\text{output}_t = A_t \phi(q_t) = \sum_{i=1}^{t} \phi(k_i) v_i^T \phi(q_t)
+$$
+
+**Esto es exactamente una memoria asociativa Hebbiana** donde:
+- Los keys $k_i$ son los patrones almacenados
+- Los values $v_i$ son los patrones a recuperar
+- La query $q_t$ es la clave de busqueda
+
+**Implicacion**: La attention estandar (con softmax) es una version **normalizada y no-lineal** de fast weights. Mamba, RWKV y linear attention son **fast weight programmers explicitios**.
+
+## Titans: Learning to Memorize at Test Time (Google, 2024)
+
+### Arquitectura
+
+Titans introduce un **modulo de memoria neural a largo plazo** que aprende durante inferencia:
+
+$$
+M_t = M_{t-1} - \eta_t \nabla_M \mathcal{L}_{\text{surprise}}(x_t; M_{t-1})
+$$
+
+Donde:
+- $M_t$ = estado del modulo de memoria (parametros)
+- $\mathcal{L}_{\text{surprise}}(x_t; M_{t-1})$ = lo "sorprendido" que esta el modelo por $x_t$
+- $\eta_t$ = learning rate (aprendible, dependiente del input)
+
+**Interpretacion**: Si el token es sorprendente (loss alto), actualiza mucho la memoria. Si es predecible, actualiza poco.
+
+### Componentes:
+
+1. **Core**: Procesamiento principal (attention o SSM)
+2. **Long-term memory**: Modulo que se entrena online (los fast weights)
+3. **Persistent memory**: Parametros fijos aprendidos durante entrenamiento
+
+$$
+y_t = f_{\text{core}}(x_t) + \alpha \cdot f_{\text{LTM}}(x_t; M_t) + \beta \cdot f_{\text{persistent}}(x_t)
+$$
+
+## TTT: Test-Time Training (Sun et al., 2024)
+
+### La idea radical
+
+El hidden state de cada capa no es un vector — es un **modelo completo** que se actualiza por gradient descent en cada token:
+
+$$
+W_t = W_{t-1} - \eta \nabla_W \mathcal{L}_{\text{self-supervised}}(x_t; W_{t-1})
+$$
+
+$$
+h_t = W_t \cdot x_t
+$$
+
+### Variantes:
+
+**TTT-Linear**: $W$ es una transformacion lineal
+- Equivalente a un update Hebbiano/delta
+- Eficiente, competitivo con Mamba
+
+**TTT-MLP**: $W$ parametriza un MLP
+- Mas expresivo
+- Mas costoso
+
+### Interpretacion dual:
+
+| Vista | TTT es... |
+|---|---|
+| Como RNN | Una RNN donde el estado es un modelo, no un vector |
+| Como meta-learning | El outer loop entrena; el inner loop (TTT) adapta |
+| Como fast weights | Actualizacion explicita de pesos por gradient descent |
+| Como attention | Cada token "escribe" en el modelo via gradiente |
+
+## DeltaNet
+
+Formaliza el update de fast weights como:
+
+$$
+S_t = S_{t-1} + \beta_t \left(v_t - S_{t-1} k_t\right) k_t^T
+$$
+
+Donde:
+- $S_t$ = fast weight matrix
+- $\beta_t$ = learning rate
+- $v_t - S_{t-1} k_t$ = "error de prediccion" (delta rule)
+
+Es una **delta rule** (Widrow-Hoff) aplicada online. Mas estable que el update Hebbiano puro.
+
+## Comparacion de Mecanismos
+
+| Mecanismo | Update | Complejidad | Expresividad | Estabilidad |
+|---|---|---|---|---|
+| Attention (softmax) | No update (lectura) | $O(n^2)$ | Muy alta | Muy estable |
+| Linear Attention | Hebbiano implicito | $O(n)$ | Media | Buena |
+| Fast Weights (Hinton) | $A += \eta hh^T$ | $O(d^2)$ | Media | Inestable |
+| DeltaNet | Delta rule | $O(d^2)$ | Buena | Buena |
+| TTT-Linear | Gradient descent | $O(d^2)$ | Buena | Buena |
+| TTT-MLP | Gradient descent | $O(d \cdot H)$ | Muy alta | Media |
+| Titans | Surprise-driven GD | $O(d^2)$ | Alta | Buena |
+
+## La Unificacion Teorica
+
+Todos estos mecanismos son puntos en un espectro:
+
+$$
+\text{Attention (no aprende)} \xrightarrow{\text{}} \text{Linear Attention} \xrightarrow{\text{}} \text{Fast Weights} \xrightarrow{\text{}} \text{TTT} \xrightarrow{\text{}} \text{Fine-tuning (aprende todo)}
+$$
+
+La diferencia es **cuanto aprende** el modelo por token y **que se actualiza**:
+
+| | Que se actualiza | Cuanto |
+|---|---|---|
+| Attention | Nada | 0 |
+| Linear attention | Memoria asociativa implicita | Poco |
+| Fast weights | Matriz de pesos auxiliar | Medio |
+| TTT | Modelo interno completo | Mucho |
+| Fine-tuning | Todos los pesos | Todo |

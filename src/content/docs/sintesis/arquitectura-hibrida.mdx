@@ -1,0 +1,243 @@
+---
+title: "Arquitectura Hibrida Propuesta"
+description: "Diseno de un LLM de nueva generacion combinando lo mejor de cada arquitectura"
+---
+
+# Arquitectura Hibrida: El LLM de Nueva Generacion
+
+## La tesis central
+
+Ninguna arquitectura individual resuelve todos los problemas. El LLM de nueva generacion sera un **sistema hibrido** que combine:
+
+| Componente | Arquitectura Base | Funcion |
+|---|---|---|
+| Backbone | SSM/RWKV + Attention esparsa | Procesamiento eficiente O(n) |
+| Memoria de trabajo | Fast Weights / TTT layers | Estado que evoluciona por token |
+| Memoria episodica | MANN (memoria externa) | Almacenamiento explicito |
+| Memoria a largo plazo | Pesos del modelo + memoria persistente | Conocimiento consolidado |
+| Adaptacion online | Hebbian / TTT | Aprendizaje durante inferencia |
+
+## Diseno detallado
+
+### Nivel 1: Backbone de procesamiento
+
+El backbone debe ser **eficiente** (no $O(n^2)$) pero **expresivo**.
+
+**Propuesta: Hibrido SSM + Attention Esparsa** (estilo Jamba/Griffin)
+
+$$
+\text{Block}(x) = \begin{cases}
+\text{MambaBlock}(x) & \text{si capa } \in \text{SSM layers (mayoria)} \\
+\text{AttentionBlock}(x) & \text{si capa } \in \text{Attention layers (pocas)}
+\end{cases}
+$$
+
+**Ratio optimo** (basado en resultados de Jamba, Griffin, Zamba):
+- ~75-85% capas SSM (eficiencia, estado recurrente)
+- ~15-25% capas de attention (recall, in-context learning)
+
+**Complejidad resultante:**
+
+$$
+\text{Inferencia} = O(n) \text{ (SSM)} + O(k \cdot n \cdot w) \text{ (attention esparsa)}
+$$
+
+donde $k$ = numero de capas attention, $w$ = tamano de ventana local.
+
+Comparado con Transformer puro: $O(L \cdot n^2)$
+
+### Nivel 2: Memoria de trabajo (Fast Weights / TTT)
+
+Inspirado en **Titans** y **TTT**, cada bloque tiene un modulo que actualiza un estado interno por cada token procesado.
+
+**Mecanismo TTT simplificado:**
+
+Para cada token $x_t$:
+
+$$
+W_t = W_{t-1} - \eta \nabla_W \mathcal{L}_{\text{self-supervised}}(x_t; W_{t-1})
+$$
+
+$$
+h_t = W_t \cdot x_t
+$$
+
+El "hidden state" no es un vector fijo — es un **modelo que evoluciona**.
+
+**Que aporta:**
+- El modelo puede "aprender" patrones nuevos durante la conversacion
+- Memoria de trabajo que se adapta al contexto actual
+- No requiere reentrenamiento global
+
+**Donde colocarlo:** Despues de las capas SSM, antes de la proyeccion de salida.
+
+### Nivel 3: Memoria episodica (MANN)
+
+Una memoria externa diferenciable donde el modelo puede **escribir y leer explicitamente**.
+
+**Arquitectura:**
+
+```
+[Backbone output] → [Controller]
+                        ↓
+                   [Read Head] ← [Memory Matrix M ∈ R^{N×D}]
+                   [Write Head] → [Memory Matrix M]
+                        ↓
+                   [Output + memory context]
+```
+
+**Operaciones:**
+
+Escritura (selectiva):
+$$
+M_t = M_{t-1} \cdot (1 - w_t^w \cdot e_t^T) + w_t^w \cdot a_t^T
+$$
+
+Lectura (por contenido):
+$$
+r_t = \sum_i w_t^r(i) \cdot M_t(i)
+$$
+
+donde $w_t^r$ se computa por similitud coseno con una query generada por el backbone.
+
+**Que aporta:**
+- Memoria que persiste entre tokens (no solo estado recurrente)
+- El modelo decide que guardar y que recuperar
+- Puede almacenar "hechos" descubiertos durante la conversacion
+
+**Escala:** Empezar con $N = 1024$ slots, $D = 256$ dimensiones por slot.
+
+### Nivel 4: Memoria a largo plazo
+
+Dos componentes:
+
+**A. Pesos del modelo** (memoria parametrica clasica)
+- Conocimiento del mundo codificado en los pesos
+- Se actualiza solo con entrenamiento/fine-tuning
+
+**B. Memory Layers** (inspirado en Meta "Memory Layers at Scale")
+
+$$
+y = \text{softmax}(q \cdot K^T / \sqrt{d}) \cdot V
+$$
+
+donde $K, V$ son **matrices de memoria gigantes** (millones de entradas) almacenadas fuera de los pesos normales.
+
+**Que aporta:**
+- Almacenamiento de conocimiento factual enorme sin aumentar FLOPs
+- Se puede actualizar sin reentrenar todo el modelo
+- Tipo "base de datos interna diferenciable"
+
+### Nivel 5: Adaptacion online (opcional, mas experimental)
+
+**Hebbian update local** despues de cada respuesta:
+
+$$
+\Delta \theta_{\text{local}} = \alpha \cdot \nabla_\theta \mathcal{L}_{\text{feedback}}
+$$
+
+donde $\mathcal{L}_{\text{feedback}}$ puede venir de:
+- Auto-supervision (predecir siguiente token del contexto)
+- Feedback explicito del usuario
+- Consistencia interna
+
+**Proteccion contra drift:**
+$$
+\theta_{\text{updated}} = \theta_{\text{base}} + \text{clip}(\Delta\theta_{\text{local}}, \epsilon)
+$$
+
+## Diagrama de flujo completo
+
+```
+Input tokens
+     │
+     ▼
+┌─────────────┐
+│  Embedding   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│         BACKBONE (x24-48 capas)      │
+│                                      │
+│  ┌──────────┐   ┌──────────────┐    │
+│  │ SSM/Mamba │   │ Attention    │    │
+│  │ (75-85%)  │   │ Esparsa(15%) │    │
+│  └──────────┘   └──────────────┘    │
+│         │              │             │
+│         └──────┬───────┘             │
+│                │                     │
+│  ┌─────────────▼──────────────┐     │
+│  │  TTT / Fast Weight Layer    │     │
+│  │  (memoria de trabajo)       │     │
+│  └─────────────┬──────────────┘     │
+│                │                     │
+│  ┌─────────────▼──────────────┐     │
+│  │  Memory Layer (read/write)  │     │
+│  │  (memoria episodica MANN)   │     │
+│  └─────────────┬──────────────┘     │
+└────────────────┼────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────┐
+│  Memory Layers at Scale             │
+│  (memoria a largo plazo factual)    │
+└────────────────┬────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────┐
+│  Output Head → Next Token           │
+└─────────────────────────────────────┘
+```
+
+## Estimacion de recursos
+
+### Modelo de ~7B parametros equivalente
+
+| Componente | Parametros | VRAM estimado |
+|---|---|---|
+| Backbone SSM (36 capas) | ~5B | ~10 GB (FP16) |
+| Attention layers (8 capas) | ~1B | ~2 GB |
+| TTT layers | ~200M | ~400 MB |
+| MANN controller + memoria | ~100M + 256MB | ~500 MB |
+| Memory Layers | ~500M (keys) + variable | ~1-4 GB |
+| **Total** | **~7B + memoria** | **~14-17 GB** |
+
+Comparable a un Transformer de 7B (~14GB), pero con **memoria y adaptacion que el Transformer no tiene**.
+
+### Complejidad de inferencia
+
+| Operacion | Transformer 7B | Hibrido propuesto |
+|---|---|---|
+| Por token (prefill) | $O(n \cdot d^2)$ | $O(n \cdot d^2)$ (similar) |
+| Por token (generacion) | $O(n \cdot d)$ KV-cache | $O(d^2)$ estado fijo + $O(d)$ MANN |
+| Memoria por secuencia | $O(n \cdot d)$ crece | $O(d)$ fijo + $O(N_{mem} \cdot d)$ fijo |
+
+**Ventaja clave**: La memoria no crece con la longitud de la secuencia.
+
+## Comparacion con el estado del arte
+
+| Feature | GPT-4/Claude | Mamba | RWKV | **Hibrido Propuesto** |
+|---|---|---|---|---|
+| Calidad en NLP | Excelente | Buena | Buena | Excelente (attention esparsa) |
+| Contexto largo | Costoso | Eficiente | Eficiente | Eficiente |
+| Memoria persistente | No (solo contexto) | No (solo estado) | No (solo estado) | Si (MANN + memory layers) |
+| Aprendizaje online | No | No | No | Si (TTT + Hebbian) |
+| Inferencia eficiente | No (KV-cache) | Si | Si | Si |
+| Recall preciso | Si (attention) | Limitado | Limitado | Si (attention esparsa) |
+
+## Riesgos y mitigaciones
+
+| Riesgo | Mitigacion |
+|---|---|
+| Complejidad de entrenamiento | Entrenar por fases: backbone primero, luego anadir modulos |
+| Inestabilidad de fast weights | Clipping agresivo + learning rate muy bajo |
+| MANN no escala | Empezar con memoria pequena, escalar con sparse access |
+| Demasiados hiperparametros | Comenzar con configuracion minima, anadir complejidad |
+| Overhead de memoria externa | Latencia comparable si MANN esta en GPU |
+
+## La pregunta clave
+
+> Si pudieras construir un LLM desde cero hoy, sin restricciones de compatibilidad, que harias?
+
+**Respuesta**: Exactamente esto. Un backbone SSM+Attention con TTT para memoria de trabajo y MANN para memoria episodica. Es la arquitectura que mas se acerca a como funciona realmente la cognicion.

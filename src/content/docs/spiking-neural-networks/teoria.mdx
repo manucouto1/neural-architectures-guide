@@ -1,0 +1,160 @@
+---
+title: "Spiking Neural Networks - Teoria"
+description: "Fundamentos matematicos de Spiking Neural Networks"
+---
+
+# Spiking Neural Networks - Fundamentos Teoricos
+
+## La Tercera Generacion de Redes Neuronales
+
+| Generacion | Modelo | Computacion |
+|---|---|---|
+| 1a | Perceptron | Umbral binario |
+| 2a | MLP, CNN, RNN, Transformer | Activaciones continuas |
+| **3a** | **Spiking Neural Networks** | **Pulsos discretos en tiempo continuo** |
+
+Las SNNs son el modelo computacional **mas cercano al cerebro biologico**. Las neuronas se comunican mediante **spikes** (pulsos electricos breves) y el timing de estos spikes codifica informacion.
+
+## Modelo LIF (Leaky Integrate-and-Fire)
+
+El modelo de neurona spiking mas utilizado:
+
+$$
+\tau_m \frac{dV(t)}{dt} = -(V(t) - V_{\text{rest}}) + R \cdot I(t)
+$$
+
+Donde:
+- $V(t)$ = potencial de membrana
+- $V_{\text{rest}}$ = potencial de reposo (tipicamente 0)
+- $\tau_m = R \cdot C$ = constante de tiempo de la membrana
+- $R$ = resistencia de membrana
+- $I(t)$ = corriente de entrada (suma de spikes de otras neuronas)
+
+**Condicion de spike**:
+
+$$
+\text{Si } V(t) \geq V_{\text{threshold}} \implies \text{spike en tiempo } t, \quad V(t) \leftarrow V_{\text{reset}}
+$$
+
+### Version discreta (para simulacion):
+
+$$
+V[t] = \beta \cdot V[t-1] + (1 - \beta) \cdot I[t]
+$$
+
+$$
+S[t] = \Theta(V[t] - V_{\text{threshold}})
+$$
+
+donde $\beta = e^{-\Delta t / \tau_m}$ es el factor de decaimiento y $\Theta$ es la funcion de Heaviside.
+
+## Modelo de Izhikevich
+
+Mas expresivo que LIF, captura mas patrones de disparo biologicos:
+
+$$
+\frac{dv}{dt} = 0.04v^2 + 5v + 140 - u + I
+$$
+
+$$
+\frac{du}{dt} = a(bv - u)
+$$
+
+Con reset: si $v \geq 30$ mV, entonces $v \leftarrow c$, $u \leftarrow u + d$.
+
+Los parametros $(a, b, c, d)$ permiten reproducir **20+ patrones de disparo biologicos** diferentes (regular spiking, bursting, chattering, etc.).
+
+## Codificacion de Informacion
+
+### Rate Coding
+La frecuencia de spikes codifica el valor:
+$$
+\text{valor} \propto \frac{\text{numero de spikes}}{\Delta t}
+$$
+- Simple, robusto al ruido
+- Pierde informacion temporal
+
+### Temporal Coding
+El **momento exacto** del spike codifica informacion:
+$$
+\text{valor} \propto t_{\text{spike}} - t_{\text{referencia}}
+$$
+- Un solo spike puede codificar un valor
+- Mucho mas eficiente
+- Mas fragil
+
+### Population Coding
+Un **grupo de neuronas** codifica informacion conjuntamente:
+$$
+\text{valor} = f(\{t_1^{\text{spike}}, t_2^{\text{spike}}, ..., t_N^{\text{spike}}\})
+$$
+
+## STDP: Aprendizaje Biologico
+
+**Spike-Timing-Dependent Plasticity** — la regla de aprendizaje del cerebro:
+
+$$
+\Delta w = \begin{cases}
+A_+ \exp\left(-\frac{\Delta t}{\tau_+}\right) & \text{si } \Delta t > 0 \text{ (pre antes que post → reforzar)} \\
+-A_- \exp\left(\frac{\Delta t}{\tau_-}\right) & \text{si } \Delta t < 0 \text{ (post antes que pre → debilitar)}
+\end{cases}
+$$
+
+donde $\Delta t = t_{\text{post}} - t_{\text{pre}}$.
+
+**Interpretacion**: Si la neurona A dispara justo **antes** de B, la conexion A→B se refuerza. Si A dispara **despues** de B, se debilita. Es una forma de **deteccion de causalidad**.
+
+## Surrogate Gradients: Entrenando SNNs con Backprop
+
+El problema: el spike $S = \Theta(V - V_{\text{th}})$ es una **funcion escalon** con gradiente 0 en todas partes excepto en $V_{\text{th}}$ (donde es infinito).
+
+**Solucion**: Reemplazar el gradiente de $\Theta$ por un **surrogate gradient** suave:
+
+$$
+\frac{\partial S}{\partial V} \approx \sigma'(V - V_{\text{th}}) = \frac{1}{\left(1 + |V - V_{\text{th}}|/\alpha\right)^2}
+$$
+
+o usando una sigmoide:
+
+$$
+\frac{\partial S}{\partial V} \approx \frac{\beta \cdot e^{-\beta(V - V_{\text{th}})}}{(1 + e^{-\beta(V - V_{\text{th}})})^2}
+$$
+
+Esto permite usar **backpropagation through time (BPTT)** estandar para entrenar SNNs.
+
+## Propiedades Clave
+
+### Eficiencia Energetica
+- Las neuronas solo consumen energia **cuando disparan**
+- Un cerebro humano: ~20W para ~86 mil millones de neuronas
+- Una GPU entrenando un LLM: ~300W para ~100 mil millones de parametros
+- SNNs en hardware neuromorfico: **~1-10 mW** para millones de neuronas
+
+### Computacion Event-Driven
+- No hay "forward pass" global — solo computan las neuronas que reciben spikes
+- Sparsity natural: en un instante dado, solo ~1-5% de neuronas disparan
+
+### Codificacion Temporal Rica
+- El timing entre spikes codifica informacion que los ANNs no capturan
+- Correlaciones temporales finas son "gratis"
+
+## Comparacion con ANNs Clasicas
+
+| Propiedad | ANN (Transformer, etc.) | SNN |
+|---|---|---|
+| Activacion | Continua (float32) | Binaria (0/1 spike) |
+| Computacion | Multiplicacion-acumulacion | Suma condicional |
+| Tiempo | Pasos discretos sin significado temporal | Tiempo tiene significado |
+| Energia | ~300W (GPU) | ~1-10mW (neuromorfico) |
+| Comunicacion | Tensores densos | Eventos esparsos |
+| Entrenamiento | Backprop maduro | Surrogate gradients (menos maduro) |
+| Escalabilidad NLP | Probada (GPT-4, etc.) | **No probada** |
+
+## Limitaciones Fundamentales
+
+1. **Entrenamiento dificil**: Surrogate gradients son una aproximacion; el entrenamiento es menos estable
+2. **Herramientas inmaduras**: Comparado con PyTorch/JAX para ANNs
+3. **Falta de evidencia en NLP**: Casi no hay resultados en tareas de lenguaje a gran escala
+4. **Hardware limitado**: Los chips neuromorficos son caros y de baja disponibilidad
+5. **Conversion lossy**: Convertir ANN → SNN pierde precision
+6. **Teoria incompleta**: No hay un "universal approximation theorem" claro para SNNs temporales

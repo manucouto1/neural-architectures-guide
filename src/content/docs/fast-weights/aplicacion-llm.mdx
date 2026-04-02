@@ -1,0 +1,197 @@
+---
+title: "Fast Weights y Hebbian Learning - Aplicacion a LLMs"
+description: "Como aplicar fast weights para LLMs de nueva generacion"
+---
+
+# Fast Weights y Hebbian Learning - Aplicacion a LLMs
+
+**Esta es probablemente la seccion mas importante de toda la guia.** Los fast weights representan el cambio de paradigma mas profundo que puede ocurrir en LLMs.
+
+## El Paradigma Actual vs El Nuevo Paradigma
+
+### Hoy: Train → Freeze → Infer
+
+$$
+\underbrace{\theta^* = \text{train}(\mathcal{D})}_{\text{meses, millones de \$}} \quad \xrightarrow{\text{deploy}} \quad \underbrace{y = f_{\theta^*}(x)}_{\text{pesos congelados para siempre}}
+$$
+
+El modelo es **exactamente el mismo** para cada usuario, cada conversacion, cada contexto. No aprende nada nuevo.
+
+### Futuro: Train → Infer WITH Learning
+
+$$
+\underbrace{\theta^* = \text{train}(\mathcal{D})}_{\text{entrenamiento base}} \quad \xrightarrow{\text{deploy}} \quad \underbrace{y = f_{\theta^* + \Delta\theta_t(x)}(x)}_{\text{pesos evolucionan por token}}
+$$
+
+Cada token que el modelo procesa **actualiza sus pesos locales**. El modelo se adapta en tiempo real.
+
+## Que Significa "Aprender en Test Time"
+
+**No es fine-tuning.** Es fundamentalmente diferente:
+
+| | Fine-tuning | Test-Time Training |
+|---|---|---|
+| **Cuando** | Offline, antes de deploy | Online, durante inferencia |
+| **Datos** | Dataset etiquetado | El propio input |
+| **Loss** | Supervisado | Auto-supervisado |
+| **Velocidad** | Minutos-horas | Microsegundos por token |
+| **Alcance** | Todos los pesos | Solo fast weights locales |
+| **Persistencia** | Permanente | Por sesion (configurable) |
+| **Riesgo** | Catastrophic forgetting | Menor (actualizaciones pequeñas) |
+
+## TTT como Capa de un LLM
+
+### Como funciona en la practica:
+
+```
+Token "El gato se sento en la"
+
+Paso 1: El token entra en la capa TTT
+Paso 2: Forward con pesos actuales W_t → output
+Paso 3: Self-supervised loss: "predecir una transformacion de este token"
+Paso 4: Gradient update: W_{t+1} = W_t - η∇L
+Paso 5: Siguiente token usa W_{t+1}
+
+Token "alfombra. Era un gato persa con"
+
+Paso 1: Usa W_{t+1} (ya actualizado por el token anterior)
+Paso 2-5: Repite, W se adapta continuamente
+```
+
+**El modelo internalizó** que esta hablando de un gato. No necesita "recordar" en el contexto — lo tiene **en sus pesos**.
+
+### Ventajas enormes:
+
+1. **Personalizacion real**: El modelo se adapta al estilo del usuario token a token
+2. **Memoria infinita potencial**: La informacion se codifica en pesos, no en contexto finito
+3. **Sin KV-cache**: El estado es $W_t$, de tamano fijo
+4. **Adaptacion a dominio**: El modelo se especializa automaticamente segun el input
+
+## Titans como Modulo de Memoria
+
+### La idea de "surprise-driven learning":
+
+$$
+\text{surprise}(x_t) = \|f_M(x_t) - \text{target}(x_t)\|^2
+$$
+
+$$
+\eta_t = g(\text{surprise}(x_t)) \quad \text{(learning rate proporcional a la sorpresa)}
+$$
+
+**Tokens predecibles**: Update pequeño (el modelo ya los "sabe")
+**Tokens sorprendentes**: Update grande (informacion nueva)
+
+Esto es biologicamente plausible — el cerebro presta mas atencion a lo inesperado.
+
+## Integracion con LLMs: Arquitecturas Concretas
+
+### Opcion A: TTT como reemplazo de attention en capas internas
+
+```
+Capas 1-8:   Mamba (backbone eficiente)
+Capas 9-16:  TTT-Linear (memoria adaptativa)
+Capas 17-24: Mamba + Attention esparsa (recall)
+Capas 25-32: Mamba (procesamiento final)
+```
+
+### Opcion B: Titans memory module como addon
+
+```
+[Backbone (Mamba/Transformer)]
+         │
+         ├──→ [Titans Memory: lee/escribe]
+         │            │
+         ←────────────┘ (combina output + memoria)
+```
+
+### Opcion C: Fast weights como "personalización layer"
+
+```
+[Modelo base congelado]
+         │
+    ┌────┴────┐
+    │ FW Layer│ ← se actualiza por usuario/sesion
+    └────┬────┘
+         │
+    [Output]
+```
+
+Cada usuario tiene su propia fast weight matrix que se inicializa en cero y se actualiza durante la conversacion. Los pesos base nunca cambian.
+
+## Propuesta Revolucionaria: LLM con Personalizacion Real
+
+### Arquitectura:
+
+```
+Slow weights (θ*): Modelo base, 7B params, congelado
+Fast weights (W): Por usuario, ~50M params, evoluciona
+
+Inferencia para usuario U:
+1. Cargar W_U (fast weights del usuario, persistentes)
+2. Procesar input: y = f_{θ* + W_U}(x)
+3. Actualizar: W_U = W_U - η∇L(x; W_U)
+4. Guardar W_U actualizado
+
+Resultado: El modelo MEJORA con cada conversacion para ese usuario.
+```
+
+### Que habilita:
+- **Adaptacion al estilo**: Aprende como habla el usuario
+- **Memoria entre sesiones**: Información codificada en $W_U$
+- **Especializacion**: Un medico y un programador usan "el mismo" modelo pero con fast weights diferentes
+- **Privacidad**: Los fast weights son locales al usuario
+
+## Desafios Criticos
+
+| Desafio | Severidad | Mitigacion |
+|---|---|---|
+| **Estabilidad** | Alta | Clipping agresivo: $\|\Delta W\| \leq \epsilon$ |
+| **Divergencia** | Alta | Regularizacion: penalizar $\|W - W_0\|$ |
+| **Coste computacional** | Media | TTT-Linear es O(d^2), manejable |
+| **Backprop a traves del inner loop** | Alta | Truncar gradientes, usar 1-step update |
+| **Que aprender y que no** | Media | Gate aprendible que controla update |
+| **Catastrophic forgetting local** | Media | Decaimiento exponencial de updates |
+| **Seguridad** | Alta | Adversarial inputs podrian corromper fast weights |
+
+## El Espectro Completo
+
+$$
+\underbrace{\text{Attention}}_{\text{no aprende}} \xleftarrow{\quad} \underbrace{\text{Fast Weights}}_{\text{aprende localmente}} \xrightarrow{\quad} \underbrace{\text{Fine-tuning}}_{\text{aprende globalmente}}
+$$
+
+| Propiedad | Attention | Fast Weights | Fine-tuning |
+|---|---|---|---|
+| Velocidad de adaptacion | 0 | Instantanea | Lenta |
+| Persistencia | Ninguna | Configurable | Permanente |
+| Riesgo de corrupcion | 0 | Medio | Alto |
+| Expresividad | Alta (softmax) | Media-Alta | Total |
+| Costo por token | $O(nd)$ | $O(d^2)$ | N/A (offline) |
+
+Fast weights son el **sweet spot**: adaptacion rapida sin los riesgos del fine-tuning completo.
+
+## Tabla de Viabilidad
+
+| Dimension | Estado | Nota |
+|---|---|---|
+| Base teorica | Excelente | 30 años de investigacion (Schmidhuber → TTT) |
+| Implementacion | Emergente | TTT y Titans tienen codigo, no librerias maduras |
+| Resultados en NLP | Prometedores | TTT-Linear competitivo con Mamba |
+| Escalabilidad LLM | Parcialmente probada | TTT hasta ~1B, Titans por Google |
+| Aprendizaje online | Si | Exactamente lo que los LLMs necesitan |
+| Personalizacion | El killer feature | Ningun LLM actual lo tiene |
+| Memoria persistente | Via fast weights | Estado que codifica informacion |
+| Timeline | 1-3 años | Para produccion |
+
+## Conclusion: El Futuro de los LLMs
+
+Fast weights + SSMs modernos **definen el LLM de 2026-2028**:
+
+1. **Backbone**: SSM hibrido (Mamba + Attention) — eficiente, probado
+2. **Memoria de trabajo**: TTT/Titans layers — adaptacion en tiempo real
+3. **Personalizacion**: Fast weights por usuario — el modelo mejora con el uso
+4. **Memoria episodica**: MANN module — almacenamiento explicito
+
+El paradigma de "entrenar una vez, servir para siempre con pesos congelados" esta llegando a su fin. El futuro es un modelo que **evoluciona con cada interaccion**.
+
+> Si hay una sola cosa que sacar de esta guia es esta: **los fast weights son probablemente la innovacion mas importante que le queda por llegar a los LLMs**. La separacion entre entrenamiento e inferencia va a desaparecer, y eso cambia todo.

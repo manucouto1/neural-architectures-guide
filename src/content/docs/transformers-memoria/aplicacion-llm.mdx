@@ -1,0 +1,157 @@
+---
+title: "Transformers con Memoria - Aplicacion a LLMs"
+description: "Como aplicar memoria persistente en LLMs de nueva generacion"
+---
+
+# Transformers con Memoria - Aplicacion a LLMs
+
+## Estado Actual: Esto YA Se Usa en Produccion
+
+A diferencia de las otras arquitecturas de esta guia, los Transformers con memoria extendida **ya estan desplegados** en los LLMs mas potentes del mundo:
+
+| Modelo | Contexto | En produccion | Usuarios |
+|---|---|---|---|
+| Gemini 1.5 Pro | 1M+ tokens | Si | Millones |
+| Claude | 200K tokens | Si | Millones |
+| GPT-4 Turbo | 128K tokens | Si | Millones |
+
+La pregunta no es "si funciona" — es "como ir mas alla".
+
+## Extender Contexto vs Memoria Real: No Es Lo Mismo
+
+| | Contexto extendido | Memoria real |
+|---|---|---|
+| **Que es** | Ventana de attention mas grande | Almacenamiento persistente separado |
+| **Persiste** | No (se borra al terminar) | Si (entre sesiones) |
+| **Escala** | $O(n^2)$ o $O(n)$ optimizado | Independiente de $n$ |
+| **El modelo decide que guardar** | No (todo esta ahi) | Si (escritura selectiva) |
+| **Ejemplo** | GPT-4 Turbo 128K | Memorizing Transformers |
+
+**Contexto extendido resuelve** el problema de procesar documentos largos.
+**Memoria real resuelve** el problema de aprender y recordar entre sesiones.
+
+Son problemas diferentes con soluciones diferentes.
+
+## El Espectro de Soluciones
+
+```
+Menos memoria ←──────────────────────────────────→ Mas memoria
+
+[Contexto      [Retrieval    [Memoria       [Memoria        [Aprendizaje
+ extendido]     (RAG)]        compresiva]    persistente]     online]
+                              
+ YaRN          RETRO         Infini-attn    Memory Layers   Fast Weights
+ FlashAttn     Memorizing    Compressive    Parametros      TTT/Titans
+ Ring Attn     Txfmers       Transformer    aprendidos      (ver cap 8)
+```
+
+## Que Funciona Hoy
+
+### Tier 1: Produccion (ya desplegado)
+- **FlashAttention** + **RoPE extendido** (YaRN/LongRoPE) = 128K-1M contexto
+- **RAG** con vector databases = memoria factual ilimitada
+- **KV-cache management** (vLLM, PagedAttention) = inferencia eficiente
+
+### Tier 2: Investigacion avanzada (funciona pero no desplegado masivamente)
+- **RETRO** / **Memorizing Transformers** = retrieval diferenciable
+- **Infini-attention** = memoria compresiva
+- **Memory Layers** = base de datos interna aprendida
+
+### Tier 3: Experimental (prometedor, no probado a escala)
+- **Block-Recurrent Transformer** = recurrencia entre bloques
+- **Landmark Attention** = acceso random a contexto largo
+
+## El KV-cache como Cuello de Botella
+
+En inferencia, el KV-cache es el mayor problema:
+
+$$
+\text{KV-cache} = 2 \times L \times n \times d_{\text{head}} \times n_{\text{heads}} \times \text{bytes}
+$$
+
+Para Llama 3.1 8B con 128K contexto:
+- $2 \times 32 \times 128000 \times 128 \times 32 \times 2 = \sim 32$ GB
+
+Solo el KV-cache consume **mas memoria que los pesos del modelo**.
+
+### Soluciones:
+1. **GQA** (Grouped Query Attention): Compartir KV entre grupos de heads (Llama 3)
+2. **MQA** (Multi-Query Attention): Un solo KV para todas las heads
+3. **KV-cache quantization**: Comprimir KV a INT4/INT8
+4. **PagedAttention** (vLLM): Gestion de memoria tipo paginacion de SO
+5. **SSM layers**: Eliminar KV-cache completamente para algunas capas (hibrido)
+
+## Memoria como Parametros Aprendidos
+
+La idea de **Memory Layers at Scale** (Meta):
+
+En vez de almacenar informacion en el KV-cache (temporal) o en los pesos (distribuido), crear **capas dedicadas a almacenamiento**:
+
+```python
+class MemoryLayer(nn.Module):
+    def __init__(self, d_model, num_entries=1_000_000, top_k=32):
+        super().__init__()
+        self.keys = nn.Parameter(torch.randn(num_entries, d_model) * 0.01)
+        self.values = nn.Parameter(torch.randn(num_entries, d_model) * 0.01)
+        self.top_k = top_k
+    
+    def forward(self, x):
+        # Product key para eficiencia
+        scores = x @ self.keys.T  # (batch, seq, num_entries)
+        top_scores, top_idx = scores.topk(self.top_k, dim=-1)
+        weights = F.softmax(top_scores, dim=-1)
+        # Recuperar valores
+        retrieved = self.values[top_idx]  # (batch, seq, top_k, d)
+        output = (weights.unsqueeze(-1) * retrieved).sum(dim=-2)
+        return x + output
+```
+
+**Ventaja**: 1M entries x 1024 dim = ~4GB de "conocimiento" accesible en $O(k)$, no $O(n)$.
+
+## Propuesta: Transformer con 3 Tipos de Memoria
+
+```
+Nivel 1: Contexto inmediato (attention)
+  - Ultimos 4K-8K tokens
+  - FlashAttention, full quality
+  - Para: razonamiento sobre input actual
+
+Nivel 2: Contexto comprimido (Infini-attention)
+  - Tokens anteriores al nivel 1
+  - Compresion lineal, tamaño fijo
+  - Para: referencia a contexto amplio
+
+Nivel 3: Memoria persistente (Memory Layers)
+  - Millones de pares KV aprendidos
+  - Persiste entre sesiones
+  - Para: conocimiento factual, preferencias de usuario
+
+Nivel 4 (opcional): Retrieval externo (RAG)
+  - Base de datos vectorial
+  - Trillones de tokens indexados
+  - Para: conocimiento del mundo actualizable
+```
+
+## Tabla de Viabilidad
+
+| Dimension | Estado | Nota |
+|---|---|---|
+| Contexto extendido | En produccion | Ya resuelto (128K-1M) |
+| Retrieval (RAG) | En produccion | Funciona pero no es end-to-end |
+| Memoria compresiva | Prototipo | Infini-attention prometedor |
+| Memory Layers | Investigacion avanzada | Meta lo ha validado a escala |
+| Memoria entre sesiones | El gran reto | Ningún LLM comercial lo tiene |
+| Eliminacion de KV-cache | Via hibridos SSM | Parcialmente resuelto |
+| Actualizacion de memoria | Experimental | MemoryLLM, TTT |
+
+## Veredicto
+
+Los Transformers con memoria son el **estado del arte actual** y la base sobre la que se construye todo lo demas. El camino mas pragmatico para un LLM de nueva generacion es:
+
+1. **Base**: Transformer optimizado (FlashAttention, GQA, RoPE extendido)
+2. **Añadir**: SSM layers para eficiencia (hibrido, cap. 6)
+3. **Añadir**: Memory Layers para conocimiento persistente
+4. **Añadir**: Infini-attention o compresion para contexto ultra-largo
+5. **Opcional**: RAG para conocimiento actualizable
+
+> Los Transformers con memoria no son una alternativa a los Transformers — son **la evolucion natural**. Todo LLM serio de nueva generacion los incorporara de alguna forma.

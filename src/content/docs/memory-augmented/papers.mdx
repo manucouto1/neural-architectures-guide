@@ -1,0 +1,115 @@
+---
+title: "Memory-Augmented Networks - Papers"
+description: "Papers fundamentales y recientes sobre MANNs"
+---
+
+# Memory-Augmented Networks - Papers
+
+## Papers Fundamentales
+
+### "Neural Turing Machines"
+- **Autores**: Alex Graves, Greg Wayne, Ivo Danihelka
+- **Año**: 2014
+- **Venue**: arXiv (influyente pero no publicado en conferencia)
+- **Link**: https://arxiv.org/abs/1410.5401
+- **Contribucion**: Introduce la idea de una red neuronal con memoria externa direccionable y mecanismos de lectura/escritura diferenciables. Demuestra que el modelo puede aprender algoritmos simples (copiar, ordenar). Paper seminal que inspiro toda la linea de MANNs.
+
+### "Hybrid Computing Using a Neural Network with Dynamic External Memory" (DNC)
+- **Autores**: Alex Graves, Greg Wayne, Malcolm Reynolds, Tim Harley, Ivo Danihelka, et al.
+- **Año**: 2016
+- **Venue**: **Nature** (portada)
+- **Link**: https://www.nature.com/articles/nature20101
+- **Contribucion**: Evolucion de NTM con memory allocation, temporal linking y multiples read heads. Demuestra razonamiento sobre grafos, planificacion de rutas, y comprension de lenguaje natural con memoria. Publicado en Nature — el paper de MANN mas citado.
+
+### "Memory Networks"
+- **Autores**: Jason Weston, Sumit Chopra, Antoine Bordes
+- **Año**: 2014
+- **Venue**: ICLR 2015
+- **Link**: https://arxiv.org/abs/1410.3916
+- **Contribucion**: Propone el concepto de Memory Networks para QA. La memoria almacena hechos como vectores y se accede por similitud. Version original requeria supervision de que leer.
+
+### "End-to-End Memory Networks"
+- **Autores**: Sainbayar Sukhbaatar, Arthur Szlam, Jason Weston, Rob Fergus
+- **Año**: 2015
+- **Venue**: NeurIPS 2015
+- **Link**: https://arxiv.org/abs/1503.08895
+- **Contribucion**: Hace Memory Networks entrenable end-to-end (sin supervision de atencion). Introduce multi-hop attention sobre memoria. Precursora directa del mecanismo de atencion en Transformers.
+
+### "Meta-Learning with Memory-Augmented Neural Networks"
+- **Autores**: Adam Santoro, Sergey Bartunov, Matthew Botvinick, Daan Wierstra, Timothy Lillicrap
+- **Año**: 2016
+- **Venue**: ICML 2016
+- **Link**: https://arxiv.org/abs/1605.06065
+- **Contribucion**: Usa MANNs (basadas en NTM) para meta-learning (one-shot learning). La memoria almacena ejemplos de clases nuevas y permite clasificar con un solo ejemplo. Demuestra que la memoria externa es ideal para aprendizaje rapido.
+
+### "Relational Memory Core"
+- **Autores**: Adam Santoro, Ryan Faulkner, David Raposo, Jack Rae, Mike Chrzanowski, et al.
+- **Año**: 2018
+- **Venue**: NeurIPS 2018
+- **Link**: https://arxiv.org/abs/1806.01822
+- **Contribucion**: Slots de memoria que interactuan via self-attention. Permite razonamiento relacional entre items almacenados en memoria.
+
+## Papers Recientes (2023-2025)
+
+### "Memorizing Transformers"
+- **Autores**: Yuhuai Wu, Markus N. Rabe, DeLesley Hutchins, Christian Szegedy
+- **Año**: 2022
+- **Venue**: ICLR 2022
+- **Link**: https://arxiv.org/abs/2203.08913
+- **Contribucion**: Extiende Transformers con un KV-cache externo permanente accesible via kNN. En cada paso de atencion, ademas de atender al contexto local, el modelo busca keys similares en un almacen externo de millones de pares KV. Resultados excelentes en contexto largo.
+
+### "MemoryLLM: Towards Self-Updatable Large Language Models"
+- **Autores**: Yu Wang et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2402.04624
+- **Contribucion**: LLM con un pool de memoria que se actualiza durante inferencia. El modelo puede escribir y leer de esta memoria, permitiendo "auto-actualizacion" sin reentrenamiento. Conecta directamente MANNs con LLMs modernos.
+
+### "Kanerva Machine"
+- **Autores**: Yan Wu, Greg Wayne, Alex Graves, Timothy Lillicrap
+- **Año**: 2018
+- **Link**: https://arxiv.org/abs/1804.01756
+- **Contribucion**: Combina sparse distributed memory (Kanerva) con redes generativas. La memoria es de alta dimension y el acceso es por proximidad, como en la memoria asociativa humana.
+
+### "Improving Language Models by Retrieving from Trillions of Tokens" (RETRO)
+- **Año**: 2022 (ver seccion Transformers con Memoria)
+- **Relevancia**: RETRO es esencialmente una MANN moderna donde la "memoria" es un indice de trillones de tokens y el "read head" es retrieval + cross-attention.
+
+### "Leave No Context Behind: Infini-attention"
+- **Año**: 2024 (ver seccion Transformers con Memoria)
+- **Relevancia**: Infini-attention incluye un modulo de compressive memory que es una evolucion directa del concepto MANN dentro de un Transformer.
+
+## Papers sobre Aplicacion a LLMs
+
+### "Augmenting Language Models with Long-Term Memory"
+- **Autores**: Weizhi Wang et al.
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2306.07174
+- **Contribucion**: Framework para añadir memoria a largo plazo a LLMs existentes. Combina retrieval con memoria aprendible. Resultados en conversaciones multi-sesion.
+
+### "Memory Layers at Scale"
+- **Autores**: Vincent-Pierre Berges et al. (Meta)
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2412.09764
+- **Contribucion**: Propone "memory layers" — capas con millones de pares key-value aprendibles que actuan como una base de datos interna diferenciable. No aumenta FLOPs significativamente. Escalado a modelos de varios billones de parametros.
+
+### "Self-RAG: Learning to Retrieve, Generate, and Critique"
+- **Año**: 2023
+- **Contribucion**: LLM que aprende cuando y que recuperar de memoria externa. Combina generacion con auto-critica sobre el uso de memoria.
+
+## Mapa de Lectura
+
+```
+Memory Networks (Weston 2014) ← concepto
+    ↓
+End-to-End Memory Networks (Sukhbaatar 2015) ← end-to-end
+    ↓
+Neural Turing Machines (Graves 2014) ← memoria R/W
+    ↓
+DNC (Graves 2016, Nature) ← estado del arte MANNs clasicas
+    ↓
+Memorizing Transformers (Wu 2022) ← MANNs en la era Transformer
+    ↓
+Memory Layers at Scale (Meta 2024) ← escalado
+    ↓
+MemoryLLM (2024) ← self-updating LLM
+```

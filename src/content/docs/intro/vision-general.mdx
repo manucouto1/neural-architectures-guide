@@ -1,0 +1,73 @@
+---
+title: Vision General
+description: Mapa completo de arquitecturas neuronales para construir LLMs de nueva generacion
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+# Arquitecturas Neuronales para LLMs de Nueva Generacion
+
+Esta guia documenta en profundidad las arquitecturas neuronales mas prometedoras para superar las limitaciones fundamentales de los LLMs actuales.
+
+## Que encontraras aqui
+
+Cada arquitectura se cubre en 4 dimensiones:
+
+<CardGrid>
+  <Card title="Teoria" icon="open-book">
+    Fundamentos matematicos, ecuaciones clave, propiedades y limitaciones teoricas.
+  </Card>
+  <Card title="Frameworks" icon="setting">
+    Librerias, herramientas y codigo listo para experimentar.
+  </Card>
+  <Card title="Papers" icon="document">
+    Papers fundamentales, recientes y especificamente sobre aplicacion a LLMs.
+  </Card>
+  <Card title="Aplicacion a LLMs" icon="rocket">
+    Que necesitas saber si quieres construir un LLM de nueva generacion con esta tecnologia.
+  </Card>
+</CardGrid>
+
+## Mapa de Arquitecturas
+
+### Bloque 1: Memoria y Estado Dinamico
+
+Estas arquitecturas atacan el problema de la memoria mediante **estado interno que evoluciona en el tiempo**:
+
+| Arquitectura | Idea Central | Resuelve Memoria? |
+|---|---|---|
+| **Liquid Neural Networks** | Estado gobernado por ODEs con constantes de tiempo variables | Parcialmente (implicita) |
+| **Neural ODEs** | Redes como sistemas dinamicos continuos | Conceptualmente si |
+| **Spiking Neural Networks** | Computacion basada en eventos y timing de spikes | Parcialmente (temporal) |
+| **Kolmogorov-Arnold Networks** | Funciones de activacion aprendibles en las aristas | No directamente |
+
+### Bloque 2: Memoria Explicita y Persistente
+
+Estas atacan la memoria de forma **directa y explicita**:
+
+| Arquitectura | Idea Central | Resuelve Memoria? |
+|---|---|---|
+| **Memory-Augmented Networks** | Memoria externa tipo RAM, separada de computacion | Si (explicito) |
+| **RWKV / RNNs Modernos** | Estado recurrente eficiente, alternativa a attention | Bastante |
+| **Transformers con Memoria** | Atencion + acceso a memoria persistente externa | Si (hibrido) |
+| **Fast Weights / Hebbian** | Pesos que cambian durante inferencia | Probablemente el futuro |
+
+### Bloque 3: Sintesis
+
+- **Arquitectura Hibrida Propuesta**: Como combinar lo mejor de cada enfoque
+- **Roadmap de Implementacion**: Orden practico para construir un LLM de nueva generacion
+
+## Premisa fundamental
+
+$$
+\text{Cuello de botella de LLMs} \neq \text{Tamaño del modelo}
+$$
+
+$$
+\text{Cuello de botella de LLMs} = \text{Memoria} + \text{Aprendizaje Online}
+$$
+
+El futuro de los LLMs ira hacia:
+1. Modelos con **estado persistente** (no solo contexto)
+2. **Aprendizaje online** (adaptacion sin reentrenamiento)
+3. **Separacion clara** entre memoria y computacion

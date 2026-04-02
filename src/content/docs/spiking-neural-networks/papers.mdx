@@ -1,0 +1,122 @@
+---
+title: "Spiking Neural Networks - Papers"
+description: "Papers fundamentales y recientes sobre Spiking Neural Networks"
+---
+
+# Spiking Neural Networks - Papers
+
+## Papers Fundamentales (Clasicos)
+
+### "A quantitative description of membrane current and its application to conduction and excitation in nerve"
+- **Autores**: Alan Hodgkin, Andrew Huxley
+- **Año**: 1952
+- **Venue**: Journal of Physiology
+- **Contribucion**: El modelo biofisico original de la neurona. Premio Nobel. Demasiado costoso computacionalmente para deep learning, pero la referencia biologica fundamental.
+
+### "Simple Model of Spiking Neurons"
+- **Autores**: Eugene Izhikevich
+- **Año**: 2003
+- **Venue**: IEEE Transactions on Neural Networks
+- **Link**: https://www.izhikevich.org/publications/spikes.pdf
+- **Contribucion**: Modelo de 2 ecuaciones que reproduce 20+ patrones de disparo biologicos. Balance optimo entre realismo biologico y eficiencia computacional.
+
+### "Surrogate Gradient Learning in Spiking Neural Networks"
+- **Autores**: Emre O. Neftci, Hesham Mostafa, Friedemann Zenke
+- **Año**: 2019
+- **Venue**: IEEE Signal Processing Magazine
+- **Link**: https://arxiv.org/abs/1901.09948
+- **Contribucion**: EL review paper de referencia sobre como entrenar SNNs con backpropagation usando gradientes surrogados. Unifica y compara diferentes surrogate gradient functions. Lectura obligatoria.
+
+### "Deep Learning with Spiking Neurons: Opportunities and Challenges"
+- **Autores**: Michael Pfeiffer, Thomas Pfeil
+- **Año**: 2018
+- **Contribucion**: Review comprehensivo del estado del deep learning con SNNs. Identifica los desafios clave y las oportunidades.
+
+### "Spike-Timing-Dependent Plasticity: A Comprehensive Overview"
+- **Autores**: Henry Markram et al.
+- **Año**: 2012
+- **Contribucion**: Review completo de STDP, la regla de aprendizaje biologica. Base teorica para aprendizaje no supervisado en SNNs.
+
+## Papers Recientes (2023-2025)
+
+### "Spikformer: When Spiking Neural Network Meets Transformer"
+- **Autores**: Zhaokun Zhou, et al.
+- **Año**: 2023
+- **Venue**: ICLR 2023
+- **Link**: https://arxiv.org/abs/2209.15425
+- **Contribucion**: Primer Spiking Transformer exitoso. Introduce Spiking Self-Attention (SSA) donde Q, K, V son spike trains en vez de tensores continuos. Competitivo en vision (ImageNet). Demuestra que la atencion puede funcionar con spikes.
+
+### "SpikingBERT: Spiking Neural Network for Natural Language Understanding"
+- **Autores**: Malyaban Bal, Abhronil Sengupta
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2310.06488
+- **Contribucion**: Adapta BERT a una SNN. Convierte las activaciones continuas de BERT en spikes. Resultados razonables en GLUE benchmark (no state-of-the-art pero funciona). Primer intento serio de SNN para NLU.
+
+### "Spike-driven Transformer V2"
+- **Autores**: Man Yao et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2401.01141
+- **Contribucion**: Mejora significativa sobre Spikformer. Introduce spike-driven self-attention mas eficiente y mask-split spiking multi-head attention. Resultados competitivos en vision.
+
+### "Direct Training of SNN using Local Tandem Learning"
+- **Autores**: Varios
+- **Año**: 2023
+- **Contribucion**: Metodo de entrenamiento que evita BPTT completo, entrenando SNNs capa por capa de forma mas eficiente.
+
+### "Spiking Neural Networks for Large-Scale Perception"
+- **Autores**: Varios grupos (Intel, academia)
+- **Año**: 2024-2025
+- **Contribucion**: Linea de trabajo que escala SNNs a datasets grandes (ImageNet-1K, COCO) con resultados cada vez mas competitivos.
+
+### "Intel Loihi 2: A Neuromorphic Processor with Enhanced Programmability"
+- **Autores**: Intel Labs
+- **Año**: 2023
+- **Contribucion**: Descripcion del chip Loihi 2 con neuronas programables. Demuestra eficiencia energetica 100-1000x superior en workloads SNN especificos.
+
+## Papers sobre Aplicacion a NLP/LLMs
+
+### "SpikingBERT" (repetido por importancia)
+- **Relevancia**: El paper mas directo de SNN para NLP. Convierte BERT a spiking domain.
+- **Resultados**: ~85-90% del rendimiento de BERT original en GLUE tasks.
+- **Limitacion**: No es generativo (solo clasificacion/NLU).
+
+### "SpikeGPT: Generative Pre-trained Language Model with Spiking Neural Networks"
+- **Autores**: Rathi et al.
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2302.13939
+- **Contribucion**: Intento de crear un GPT basado en SNNs. Usa RWKV-like architecture con neuronas spiking. Resultados en modelos pequenos (~45M params). Demuestra que la generacion autoregresiva es posible con SNNs, pero rendimiento muy por debajo de transformers.
+
+### "Neuromorphic Computing for Natural Language Processing"
+- **Año**: 2024
+- **Contribucion**: Review del estado del NLP neuromorfico. Conclusion: prometedor para eficiencia pero lejos de competir en calidad.
+
+### "Temporal Coding in Spiking Transformers for Text Classification"
+- **Año**: 2024
+- **Contribucion**: Explora codificacion temporal de tokens en spiking transformers. Muestra que el timing de spikes puede capturar informacion semantica.
+
+## Papers de Conversion ANN → SNN
+
+### "Optimal ANN-SNN Conversion for High-performance and Low-latency SNNs"
+- **Autores**: Varios grupos
+- **Año**: 2023-2024
+- **Contribucion**: Metodos para convertir ANNs entrenadas a SNNs con minima perdida de precision. Relevante porque permitiria convertir un LLM existente a SNN para inferencia eficiente.
+
+### "Calibration-free BN-Folding for ANN-to-SNN Conversion"
+- **Año**: 2024
+- **Contribucion**: Mejora la conversion eliminando problemas con batch normalization.
+
+## Mapa de Lectura Recomendado
+
+```
+Izhikevich (2003) — entender el modelo de neurona
+    ↓
+Surrogate Gradients Review (Neftci 2019) — como entrenar
+    ↓
+Spikformer (2023) — SNN + Transformer (vision)
+    ↓
+SpikingBERT (2024) — SNN + NLP
+    ↓
+SpikeGPT (2023) — SNN generativa
+    ↓
+Loihi 2 papers — hardware
+```

@@ -1,0 +1,144 @@
+---
+title: "Spiking Neural Networks - Aplicacion a LLMs"
+description: "Como aplicar Spiking Neural Networks para LLMs de nueva generacion"
+---
+
+# Spiking Neural Networks - Aplicacion a LLMs
+
+## Que aportan las SNNs
+
+| Aporte | Descripcion | Relevancia LLM |
+|---|---|---|
+| Eficiencia energetica | 100-1000x menos energia | Inferencia en edge/movil |
+| Computacion event-driven | Solo computa cuando hay actividad | Sparsity natural |
+| Codificacion temporal | El timing codifica informacion | Representaciones mas ricas |
+| Hardware dedicado | Chips neuromorficos | Latencia ultra-baja |
+
+## Estado Actual para NLP
+
+### Lo que existe
+
+| Modelo | Tipo | Params | Resultado | Gap vs ANN |
+|---|---|---|---|---|
+| SpikingBERT | NLU (clasificacion) | ~110M | ~85-90% GLUE | ~10-15% peor |
+| SpikeGPT | Generativo | ~45M | Funciona pero limitado | ~30-40% peor |
+| Spikformer | Vision (no NLP) | ~60M | Competitivo ImageNet | ~5% peor |
+
+### Veredicto honesto
+Las SNNs para NLP estan **5-10 años detras** de los ANNs. No hay ninguna SNN que se acerque a GPT-2 siquiera, mucho menos a GPT-4 o Claude.
+
+## El Problema de Tokenizacion con Spikes
+
+### Como representa un Transformer un token:
+```
+"gato" → embedding[4523] → vector float32 [0.12, -0.34, 0.78, ...]
+```
+
+### Como tendria que representarlo una SNN:
+```
+"gato" → embedding → codificacion temporal → spike trains
+```
+
+**Opciones de codificacion**:
+
+1. **Rate coding**: Cada dimension del embedding se convierte en frecuencia de spikes
+   - Simple pero pierde informacion temporal
+   - Necesita muchos timesteps (lento)
+
+2. **Temporal coding**: El valor se codifica en el **momento** del spike
+   - Mas eficiente (1 spike = 1 valor)
+   - Mas fragil
+
+3. **Population coding**: Grupos de neuronas representan cada dimension
+   - Mas robusto
+   - Necesita muchas neuronas
+
+**El problema fundamental**: Un vocabulario de 50K tokens con embeddings de 4096 dimensiones requiere codificar eficientemente $50000 \times 4096$ valores como spike trains. Es un cuello de botella.
+
+## Potencial para Edge LLMs
+
+Aqui es donde las SNNs tienen sentido real:
+
+### Escenario: LLM en un telefono movil
+
+| Propiedad | GPU movil | Chip neuromorfico |
+|---|---|---|
+| Potencia | ~5-10W | ~10-100mW |
+| Latencia | ~50ms/token | ~1-5ms/token |
+| Bateria (1h uso) | ~5-10 Wh | ~0.1 Wh |
+| Disponibilidad | Hoy | 2026-2028 (estimado) |
+
+### El camino mas probable:
+1. Entrenar un LLM normal (Transformer/Mamba)
+2. Convertir a SNN para inferencia (ANN-to-SNN conversion)
+3. Ejecutar en hardware neuromorfico
+
+Esto preserva la calidad del entrenamiento pero gana eficiencia en inferencia.
+
+## Arquitecturas Hibridas SNN-ANN
+
+### Opcion A: SNN para embedding + ANN para procesamiento
+```
+[Input tokens] → [SNN encoder: temporal coding] → [Transformer layers] → [Output]
+```
+La SNN codifica los tokens con informacion temporal rica que el Transformer procesa.
+
+### Opcion B: ANN para procesamiento + SNN para inferencia
+```
+Entrenamiento: [Standard Transformer]
+Inferencia:    [Convertido a SNN] → ejecuta en chip neuromorfico
+```
+La conversion ANN→SNN es la linea mas activa de investigacion.
+
+### Opcion C: Capas mixtas
+```
+[SNN layers: procesamiento event-driven] ↔ [ANN layers: computacion densa]
+```
+Las capas SNN manejan la parte esparsa/temporal, las ANN la parte densa.
+
+## Desafios para Escalar a LLM
+
+| Desafio | Severidad | Estado |
+|---|---|---|
+| Entrenamiento a escala | Critica | Surrogate gradients no escalan bien |
+| Vocabulario grande | Alta | No hay solucion elegante |
+| Calidad de generacion | Critica | Muy por debajo de ANNs |
+| Hardware disponible | Alta | Loihi 2 es limitado, no comercial masivo |
+| Backprop through many timesteps | Alta | BPTT en SNNs es muy costoso |
+| Falta de infra (equivalente a HuggingFace) | Media | Ecosistema fragmentado |
+
+## Donde SI tienen sentido para LLMs
+
+1. **Inferencia eficiente en edge** (post-conversion ANN→SNN)
+2. **Procesamiento de audio/speech** como frontend de un LLM multimodal
+3. **Deteccion de eventos** en streams de datos (alertas, monitorizacion)
+4. **Sparsity hardware** — ejecutar las partes esparsas del modelo en neuromorfico
+
+## Donde NO tienen sentido (hoy)
+
+1. **Entrenamiento de LLMs** — no hay ventaja y muchas desventajas
+2. **Generacion de texto de alta calidad** — demasiado lejos
+3. **Reemplazar Transformers** como backbone — no competitivo
+4. **Tareas que requieren precision numerica** — rate coding pierde precision
+
+## Tabla de Viabilidad
+
+| Dimension | Estado | Nota |
+|---|---|---|
+| Base teorica | Solida (biologia) | Pero la teoria ≠ practica en NLP |
+| Frameworks | Maduros (snnTorch, etc.) | Pero no a escala LLM |
+| Resultados en NLP | Muy preliminares | SpikingBERT, SpikeGPT |
+| Escalabilidad LLM | No demostrada | Ningun SNN > 1B params para NLP |
+| Eficiencia energetica | Excelente | La razon de ser de SNNs |
+| Hardware | Emergente | Loihi 2, Akida |
+| Timeline para LLMs | 5-10 años | Siendo optimista |
+
+## Veredicto
+
+Las SNNs **no son candidatas para el backbone de un LLM** en el corto-medio plazo. Su valor esta en:
+
+1. **Inferencia eficiente** post-conversion (entrenar ANN, inferir SNN)
+2. **Edge deployment** donde la energia es critica
+3. **Procesamiento temporal** (audio, sensores) como input a un LLM multimodal
+
+> Si estas construyendo un LLM de nueva generacion, **ignora las SNNs para el backbone**. Pero tenlas en mente para **inferencia eficiente en dispositivos** — ahi van a ser revolucionarias cuando el hardware madure.

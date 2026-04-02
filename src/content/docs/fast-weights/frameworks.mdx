@@ -1,0 +1,253 @@
+---
+title: "Fast Weights y Hebbian Learning - Frameworks"
+description: "Librerias para implementar fast weights y aprendizaje hebbiano"
+---
+
+# Fast Weights y Hebbian Learning - Frameworks
+
+## Estado del Ecosistema
+
+Este es el campo **mas experimental** de toda la guia. No hay librerias "maduras" como HuggingFace o mamba-ssm. La mayoria de codigo es de investigacion.
+
+## Implementaciones Clave
+
+### lucidrains (Phil Wang)
+El repositorio mas completo de implementaciones de papers de deep learning:
+- **linear-attention-transformer**: https://github.com/lucidrains/linear-attention-transformer
+- **fast-weight-transformer**: https://github.com/lucidrains/fast-weight-memory-pytorch
+
+### TTT (Test-Time Training)
+- **Repo oficial**: https://github.com/test-time-training/ttt-lm-pytorch
+- **Paper**: Sun et al., 2024
+
+### flash-linear-attention
+- **Repo**: https://github.com/sustcsonglin/flash-linear-attention
+- **Para**: Kernels CUDA eficientes para linear attention, GLA, DeltaNet, RetNet
+- **Muy util** para experimentar con fast weights eficientes
+
+## Implementacion: Fast Weight Layer Basica
+
+```python
+import torch
+import torch.nn as nn
+
+class FastWeightLayer(nn.Module):
+    """Fast weights segun Ba, Hinton et al. 2016"""
+    def __init__(self, d_model, decay=0.95, lr=0.5, num_iters=3):
+        super().__init__()
+        self.d_model = d_model
+        self.decay = decay
+        self.lr = lr
+        self.num_iters = num_iters
+        
+        # Slow weights (se entrenan con backprop normal)
+        self.W = nn.Linear(d_model, d_model)
+        self.norm = nn.LayerNorm(d_model)
+    
+    def forward(self, x):
+        """x: (batch, seq_len, d_model)"""
+        batch, seq_len, d = x.shape
+        
+        # Inicializar fast weight matrix
+        A = torch.zeros(batch, d, d, device=x.device)
+        
+        outputs = []
+        for t in range(seq_len):
+            h = x[:, t]  # (batch, d)
+            
+            # Actualizar fast weights (Hebbian)
+            A = self.decay * A + self.lr * torch.bmm(
+                h.unsqueeze(2), h.unsqueeze(1)  # outer product
+            )
+            
+            # Usar fast weights con iteraciones
+            h_new = h
+            for _ in range(self.num_iters):
+                h_new = self.norm(self.W(h) + torch.bmm(A, h_new.unsqueeze(2)).squeeze(2))
+                h_new = torch.relu(h_new)
+            
+            outputs.append(h_new)
+        
+        return torch.stack(outputs, dim=1)
+```
+
+## Implementacion: TTT Layer
+
+```python
+class TTTLinearLayer(nn.Module):
+    """Test-Time Training Layer (version lineal simplificada)"""
+    def __init__(self, d_model, inner_dim=None):
+        super().__init__()
+        self.d_model = d_model
+        inner_dim = inner_dim or d_model
+        
+        # Parametros iniciales del modelo interno
+        self.W_init = nn.Parameter(torch.randn(inner_dim, d_model) * 0.01)
+        
+        # Learning rate aprendible
+        self.lr_param = nn.Parameter(torch.tensor(-3.0))  # log scale
+        
+        # Proyecciones para self-supervised loss
+        self.query_proj = nn.Linear(d_model, inner_dim)
+        self.key_proj = nn.Linear(d_model, d_model)
+    
+    @property
+    def lr(self):
+        return torch.sigmoid(self.lr_param) * 0.1  # 0 a 0.1
+    
+    def self_supervised_loss(self, x, W):
+        """Loss auto-supervisado: predecir una transformacion del input"""
+        target = self.query_proj(x)          # (batch, inner_dim)
+        prediction = W @ self.key_proj(x).unsqueeze(-1)  # (batch, inner_dim, 1)
+        return ((prediction.squeeze(-1) - target) ** 2).mean()
+    
+    def forward(self, x):
+        """x: (batch, seq_len, d_model)"""
+        batch, seq_len, d = x.shape
+        
+        # Cada elemento del batch tiene su propia copia de W
+        W = self.W_init.unsqueeze(0).expand(batch, -1, -1).clone()
+        
+        outputs = []
+        for t in range(seq_len):
+            x_t = x[:, t]  # (batch, d)
+            
+            # Forward con pesos actuales
+            out = (W @ x_t.unsqueeze(-1)).squeeze(-1)  # (batch, inner_dim)
+            outputs.append(out)
+            
+            # Self-supervised update (el "test-time training")
+            loss = self.self_supervised_loss(x_t, W)
+            # Gradient de W respecto al loss
+            grad = torch.autograd.grad(loss, W, create_graph=True)[0]
+            
+            # Actualizar W
+            W = W - self.lr * grad
+        
+        return torch.stack(outputs, dim=1)
+```
+
+**Nota**: Esta implementacion es educativa. En produccion, TTT usa formas mas eficientes (mini-batch updates, kernels optimizados).
+
+## Implementacion: DeltaNet Layer
+
+```python
+class DeltaNetLayer(nn.Module):
+    """DeltaNet: fast weights con delta rule"""
+    def __init__(self, d_model, d_state):
+        super().__init__()
+        self.d_model = d_model
+        self.d_state = d_state
+        
+        self.q_proj = nn.Linear(d_model, d_state)
+        self.k_proj = nn.Linear(d_model, d_state)
+        self.v_proj = nn.Linear(d_model, d_state)
+        self.beta_proj = nn.Linear(d_model, 1)  # learning rate
+        self.out_proj = nn.Linear(d_state, d_model)
+    
+    def forward(self, x):
+        """x: (batch, seq_len, d_model)"""
+        batch, seq_len, _ = x.shape
+        
+        q = self.q_proj(x)  # (batch, seq, d_state)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+        beta = torch.sigmoid(self.beta_proj(x))  # (batch, seq, 1)
+        
+        # Normalizar keys
+        k = k / (k.norm(dim=-1, keepdim=True) + 1e-6)
+        
+        # Fast weight matrix S (la "memoria")
+        S = torch.zeros(batch, self.d_state, self.d_state, device=x.device)
+        
+        outputs = []
+        for t in range(seq_len):
+            k_t = k[:, t]  # (batch, d_state)
+            v_t = v[:, t]
+            q_t = q[:, t]
+            b_t = beta[:, t]  # (batch, 1)
+            
+            # Delta rule update
+            prediction = (S @ k_t.unsqueeze(-1)).squeeze(-1)  # S * k
+            error = v_t - prediction
+            S = S + b_t.unsqueeze(-1) * torch.bmm(error.unsqueeze(-1), k_t.unsqueeze(1))
+            
+            # Read
+            out = (S @ q_t.unsqueeze(-1)).squeeze(-1)
+            outputs.append(out)
+        
+        output = torch.stack(outputs, dim=1)
+        return self.out_proj(output)
+```
+
+## Implementacion: Titans Memory Module
+
+```python
+class TitansMemory(nn.Module):
+    """Simplified Titans long-term memory module"""
+    def __init__(self, d_model, memory_dim=256):
+        super().__init__()
+        self.memory_dim = memory_dim
+        
+        # El "modelo interno" (la memoria)
+        self.memory_net = nn.Sequential(
+            nn.Linear(d_model, memory_dim),
+            nn.ReLU(),
+            nn.Linear(memory_dim, d_model)
+        )
+        
+        # Learning rate adaptativo
+        self.lr_net = nn.Sequential(
+            nn.Linear(d_model, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1),
+            nn.Sigmoid()
+        )
+        
+        # Gate para combinar con output principal
+        self.gate = nn.Linear(d_model * 2, d_model)
+    
+    def forward(self, x, main_output):
+        """
+        x: (batch, seq_len, d_model) - input tokens
+        main_output: (batch, seq_len, d_model) - output del backbone
+        """
+        batch, seq_len, d = x.shape
+        
+        memory_outputs = []
+        for t in range(seq_len):
+            x_t = x[:, t]
+            
+            # Leer de memoria (forward del modelo interno)
+            mem_out = self.memory_net(x_t)
+            memory_outputs.append(mem_out)
+            
+            # Calcular "surprise" (lo inesperado)
+            with torch.enable_grad():
+                surprise = ((mem_out - x_t) ** 2).mean()
+                # Actualizar el modelo interno
+                lr = self.lr_net(x_t).mean() * 0.01
+                grads = torch.autograd.grad(surprise, self.memory_net.parameters(),
+                                            create_graph=True)
+                for param, grad in zip(self.memory_net.parameters(), grads):
+                    param.data -= lr * grad
+        
+        mem_output = torch.stack(memory_outputs, dim=1)
+        
+        # Combinar con output principal
+        combined = torch.cat([main_output, mem_output], dim=-1)
+        return self.gate(combined)
+```
+
+## Tips Practicos
+
+| Aspecto | Recomendacion |
+|---|---|
+| **Empezar con** | DeltaNet o TTT-Linear (mas estables) |
+| **Evitar** | Hebbian puro (inestable sin regularizacion) |
+| **Learning rate interno** | Muy bajo (0.001-0.01), preferiblemente aprendible |
+| **Gradient clipping** | Esencial para el inner loop |
+| **Tamano de fast weight** | Mantener $d_{\text{state}}$ pequeño (64-256) |
+| **create_graph=True** | Necesario para backprop a traves del inner update |
+| **Memoria** | El inner loop multiplica uso de memoria. Gradient checkpointing ayuda |
+| **Debugging** | Monitorizar la norma de los fast weights — si explotan, algo va mal |

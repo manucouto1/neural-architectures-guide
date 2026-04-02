@@ -1,0 +1,180 @@
+---
+title: "RWKV y RNNs Modernos - Aplicacion a LLMs"
+description: "Como aplicar RWKV, Mamba y SSMs para LLMs de nueva generacion"
+---
+
+# RWKV y RNNs Modernos - Aplicacion a LLMs
+
+**Esta es la seccion mas relevante de toda la guia** porque Mamba y RWKV **ya son LLMs funcionales**. No es teoria futura — es presente.
+
+## Estado Actual: Ya Funcionan
+
+| Modelo | Params | Tipo | Calidad vs Transformer |
+|---|---|---|---|
+| Mamba-2.8B | 2.8B | SSM puro | ~Comparable a Transformer 2.8B |
+| RWKV-6 14B | 14B | RNN | ~90-95% de Transformer 14B |
+| Jamba 52B | 52B (12B activos) | SSM + Attention + MoE | Comparable a Mixtral |
+| Zamba 7B | 7B | SSM + shared attention | Competitivo con Llama-2 7B |
+| RecurrentGemma 9B | 9B | RNN + local attention | Competitivo con Gemma |
+
+## Benchmarks: Donde Ganan y Donde Pierden
+
+### Donde los SSMs/RNNs igualan o superan a Transformers:
+- **Perplexity general** — competitivos al mismo tamano
+- **Secuencias largas** — mucho mejor eficiencia
+- **Velocidad de inferencia** — 2-5x mas rapido en generacion
+- **Uso de memoria en inferencia** — estado fijo vs KV-cache creciente
+
+### Donde los SSMs/RNNs pierden:
+- **In-context learning (ICL)** — peores en aprender de ejemplos en el prompt
+- **Recall preciso** — "buscar una aguja en un pajar" es dificil sin atencion global
+- **Copy/retrieval exacto** — tareas que requieren copiar info verbatim del contexto
+
+### El problema del Recall
+
+```
+Contexto: "El numero de telefono de Juan es 555-1234. [... 10000 tokens de texto ...] 
+           ¿Cual es el telefono de Juan?"
+
+Transformer: "555-1234" ✓ (attention puede buscar directamente)
+Mamba/RWKV:  "555-XXXX" ✗ (el estado comprimido pierde detalles exactos)
+```
+
+Los SSMs comprimen toda la historia en un estado fijo. La compresion inevitablemente pierde detalles. Los Transformers pueden "buscar" con attention.
+
+## El Tradeoff Fundamental
+
+$$
+\text{Expresividad} \propto \frac{\text{Capacidad de Recall (attention)}}{\text{Eficiencia (recurrencia)}}
+$$
+
+**Transformers**: Recall perfecto ($O(n^2)$), ineficientes
+**SSMs puros**: Eficientes ($O(n)$), recall limitado
+**Hibridos**: Lo mejor de ambos mundos
+
+## Arquitecturas Hibridas: La Solucion
+
+### El patron que funciona: Muchas capas SSM + Pocas capas Attention
+
+| Modelo | % SSM | % Attention | Resultado |
+|---|---|---|---|
+| Mamba (puro) | 100% | 0% | Bueno pero recall limitado |
+| Transformer (puro) | 0% | 100% | Excelente pero costoso |
+| Jamba | ~75% | ~25% | Excelente + eficiente |
+| Griffin | ~85% | ~15% (local) | Muy bueno + eficiente |
+| Zamba | ~95% | ~5% (shared) | Bueno + muy eficiente |
+
+### Configuracion optima (basada en resultados actuales):
+
+```python
+def build_hybrid_model(n_layers=32):
+    layers = []
+    for i in range(n_layers):
+        if i % 4 == 0:  # 25% attention
+            layers.append(AttentionBlock(d_model))
+        else:            # 75% SSM
+            layers.append(MambaBlock(d_model))
+    return nn.Sequential(*layers)
+```
+
+**Por que funciona**: Las capas SSM comprimen y procesan eficientemente. Las capas de attention (pocas) proveen "puntos de busqueda" donde el modelo puede hacer recall preciso.
+
+## Ventaja Masiva en Inferencia
+
+### Transformer: KV-cache crece con cada token
+
+$$
+\text{Memoria}_{KV} = 2 \times L \times n \times d \times \text{precision}
+$$
+
+Para un modelo 7B con contexto de 100K:
+- ~50 GB solo de KV-cache
+
+### SSM/RWKV: Estado fijo
+
+$$
+\text{Memoria}_{\text{estado}} = L \times d_{\text{state}} \times d_{\text{model}} \times \text{precision}
+$$
+
+Para un modelo 7B:
+- ~50 MB de estado (independiente de longitud de contexto)
+
+**1000x menos memoria** para contextos largos.
+
+### Velocidad de generacion
+
+| Modelo | Tokens/segundo (7B, A100) | Nota |
+|---|---|---|
+| Transformer (sin optimizar) | ~30-50 | KV-cache bottleneck |
+| Transformer (vLLM) | ~100-200 | Optimizado |
+| Mamba | ~300-500 | Estado fijo, sin KV-cache |
+| RWKV | ~300-400 | Similar a Mamba |
+
+## Estado como "Memoria de Trabajo"
+
+En un SSM, el estado $h_t$ es una **compresion de toda la historia**:
+
+$$
+h_t = f(h_{t-1}, x_t) = f(f(h_{t-2}, x_{t-1}), x_t) = ... = F(x_1, x_2, ..., x_t)
+$$
+
+Esto funciona como **memoria de trabajo**: contiene lo "relevante" de la conversacion, no todo verbatim. Similar a como el cerebro humano recuerda el gist, no cada palabra.
+
+La **selectividad** de Mamba es clave: el modelo aprende que guardar y que olvidar:
+- $\Delta_t$ grande → el token se integra fuertemente en el estado
+- $\Delta_t$ pequeño → el token se ignora mayormente
+
+## Propuesta: LLM Hibrido Optimo
+
+```
+Arquitectura: SSM Backbone + Attention Esparsa + MoE
+
+Especificaciones para ~7B params activos:
+- 32 capas total
+  - 24 capas Mamba-2 (backbone eficiente)
+  - 8 capas attention (cada 4 capas, ventana 4096 + global cada 16 capas)
+- MoE con 8 expertos, top-2 (para capacidad sin FLOPs)
+- d_model = 4096
+- d_state = 64 (para mejor memoria)
+- Vocabulary: 32K BPE
+
+Inferencia:
+- Contexto "infinito" (estado fijo)
+- ~400 tokens/s en A100
+- ~20 GB VRAM
+
+Entrenamiento:
+- 1T tokens (FineWeb)
+- Parallel scan para Mamba layers
+- Standard attention para attention layers
+- ~200 A100-hours
+```
+
+## Tabla Detallada de Viabilidad
+
+| Dimension | SSM Puro | RWKV Puro | Hibrido | Nota |
+|---|---|---|---|---|
+| Perplexity | Buena | Buena | Excelente | Hibrido cierra la brecha |
+| In-context learning | Limitado | Limitado | Bueno | Attention layers resuelven |
+| Recall preciso | Malo | Malo | Bueno | Idem |
+| Velocidad inferencia | Excelente | Excelente | Muy buena | Algo mas lento por attention |
+| Memoria inferencia | Excelente | Excelente | Buena | KV-cache solo para attention layers |
+| Contexto largo | Excelente | Excelente | Excelente | Herencia de SSM |
+| Madurez de herramientas | Buena | Buena | Buena | Mamba, RWKV, HuggingFace |
+| Escalado probado | Hasta ~3B puro | Hasta 14B | Hasta 52B (Jamba) | Escalable |
+
+## Conclusion
+
+**Esta es probablemente la arquitectura mas cercana a reemplazar Transformers puros.**
+
+No es futuro lejano — es presente:
+- Jamba (AI21) es un producto comercial
+- RecurrentGemma (Google) es un modelo publico
+- RWKV tiene una comunidad open-source enorme
+
+El consenso emergente es que el LLM del futuro sera un **hibrido SSM + Attention**, con ~75-85% capas SSM y ~15-25% capas attention. Esto da:
+- Eficiencia de inferencia de SSMs
+- Calidad y recall de Transformers
+- Lo mejor de ambos mundos
+
+> Si estas construyendo un LLM de nueva generacion, **el backbone deberia ser un hibrido Mamba/SSM + Attention esparsa**. Es la decision de arquitectura mas impactante y mejor fundamentada que puedes tomar hoy.

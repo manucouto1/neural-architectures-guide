@@ -1,0 +1,100 @@
+---
+title: "Kolmogorov-Arnold Networks - Papers"
+description: "Papers fundamentales y recientes sobre KANs"
+---
+
+# Kolmogorov-Arnold Networks - Papers
+
+## Papers Fundamentales
+
+### "KAN: Kolmogorov-Arnold Networks"
+- **Autores**: Ziming Liu, Yixuan Wang, Sachin Vaidya, Fabian Ruehle, James Halverson, Marin Soljacic, Thomas Y. Hou, Max Tegmark
+- **Año**: 2024
+- **Venue**: ICLR 2025 (inicialmente arXiv 2024)
+- **Link**: https://arxiv.org/abs/2404.19756
+- **Contribucion**: EL paper fundacional. Propone reemplazar activaciones fijas en nodos (MLPs) por funciones aprendibles en aristas (B-splines). Demuestra mejores scaling laws que MLPs para funciones suaves, interpretabilidad, y regresion simbolica. Genero enorme interes en la comunidad.
+
+### Teorema de Kolmogorov-Arnold (1957)
+- **Autores**: Andrey Kolmogorov (1957), Vladimir Arnold (refinamiento)
+- **Contribucion historica**: Demostro que toda funcion continua multivariable se puede descomponer en sumas y composiciones de funciones univariables. Resolvio el 13o problema de Hilbert. Este teorema de 1957 es la base teorica de las KANs.
+
+### "KAN 2.0: Kolmogorov-Arnold Networks Meet Science"
+- **Autores**: Ziming Liu et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2408.10205
+- **Contribucion**: Extension de KANs a aplicaciones cientificas. Introduce MultKAN (con multiplicacion), mejora la regresion simbolica, y demuestra aplicaciones en fisica, biologia y matematicas. Hace KANs mas practicas para investigacion cientifica.
+
+## Papers Recientes (2024-2025)
+
+### "FourierKAN: An Efficient and Scalable Architecture"
+- **Autores**: Varios grupos
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2405.09673
+- **Contribucion**: Reemplaza B-splines por series de Fourier. Mas rapido en GPU (operaciones matriciales estandar), mejor para funciones periodicas. Mas escalable que pykan original.
+
+### "Chebyshev Polynomial-Based Kolmogorov-Arnold Networks"
+- **Año**: 2024
+- **Contribucion**: Usa polinomios de Chebyshev como base. Propiedades de convergencia bien estudiadas. Competitivo con B-splines y a veces superior en terminos de aproximacion.
+
+### "Wav-KAN: Wavelet Kolmogorov-Arnold Networks"
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2405.12832
+- **Contribucion**: Usa wavelets como funciones base. Captura features a multiples escalas (multi-resolution analysis). Util para señales y datos con estructura multi-escala.
+
+### "BSRBF-KAN: A combination of B-splines and Radial Basis Functions"
+- **Año**: 2024
+- **Contribucion**: Combina B-splines con RBFs para mejor aproximacion. Intenta obtener lo mejor de ambos mundos.
+
+### "Convolutional Kolmogorov-Arnold Networks"
+- **Año**: 2024
+- **Contribucion**: Extiende KANs a convolucion (como CNNs pero con funciones aprendibles en las aristas convolucionales). Resultados preliminares en vision.
+
+### "KAN versus MLP on Irregular or Noisy Functions"
+- **Año**: 2024
+- **Contribucion**: Analisis critico que muestra que KANs pierden su ventaja con datos ruidosos o funciones no suaves. Importante para entender limitaciones.
+
+### "A Comprehensive Survey on Kolmogorov-Arnold Networks"
+- **Año**: 2024
+- **Contribucion**: Review extenso del primer año de KANs. Cubre todas las variantes, aplicaciones y limitaciones.
+
+## Papers sobre Aplicacion a NLP/LLMs
+
+### "KAN-Transformer: Integrating KAN into Transformers"
+- **Año**: 2024
+- **Contribucion**: Reemplaza el FFN del Transformer por capas KAN. Resultados mixtos: mejor en tareas pequenas, comparable o peor en tareas grandes. El principal cuello de botella es la velocidad de las B-splines.
+
+### "LoRA Meets KAN: Parameter-Efficient Fine-Tuning with KAN Adapters"
+- **Año**: 2024
+- **Contribucion**: Usa KAN layers como adaptadores (similar a LoRA pero con funciones aprendibles). Muestra que KANs pueden ser utiles para fine-tuning eficiente sin necesitar todo el modelo en KAN.
+
+### "KAN for Language Modeling: Scaling Challenges and Opportunities"
+- **Año**: 2024-2025
+- **Contribucion**: Estudia que pasa cuando escalas KANs a vocabularios y secuencias grandes. Conclusion: la ventaja teorica de scaling laws se pierde en la practica por el overhead computacional de B-splines.
+
+### "Efficient KAN Layers for Large Language Models"
+- **Año**: 2025
+- **Contribucion**: Propone variantes eficientes de KAN especificamente diseñadas para reemplazar FFN en LLMs. Usa approximaciones de bajo rango de las B-splines.
+
+## Papers Teoricos
+
+### "On the Representation Power of KANs"
+- **Año**: 2024
+- **Contribucion**: Analisis formal de la capacidad representacional de KANs vs MLPs. Muestra que para funciones compuestas, KANs necesitan exponencialmente menos parametros que MLPs.
+
+### "Approximation Theory for KANs"
+- **Año**: 2024-2025
+- **Contribucion**: Extiende la teoria de aproximacion clasica a KANs. Formaliza las scaling laws y las condiciones bajo las cuales KANs superan a MLPs.
+
+## Mapa de Lectura Recomendado
+
+```
+Teorema Kolmogorov-Arnold (1957) — contexto matematico
+    ↓
+KAN paper original (Liu 2024) ← EMPEZAR AQUI
+    ├── KAN 2.0 (Liu 2024) — aplicaciones cientificas
+    ├── FourierKAN (2024) — variante eficiente
+    ├── ChebyKAN (2024) — variante alternativa
+    ├── KAN vs MLP analisis critico (2024) — limitaciones
+    └── KAN-Transformer (2024) — aplicacion a LLMs
+        └── Efficient KAN for LLMs (2025) — futuro
+```

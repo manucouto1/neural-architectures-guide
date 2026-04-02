@@ -1,0 +1,124 @@
+---
+title: El Problema de los LLMs Actuales
+description: Por que los LLMs actuales tienen limitaciones fundamentales en memoria y aprendizaje
+---
+
+# El Problema de los LLMs Actuales
+
+## Los dos problemas fundamentales
+
+### 1. Memoria limitada al contexto
+
+En un Transformer clasico, la "memoria" es simplemente el prompt (contexto). Esto tiene consecuencias directas:
+
+**Complejidad cuadratica del self-attention:**
+
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
+
+Para una secuencia de longitud $n$ con dimension $d$:
+- Computacion: $O(n^2 \cdot d)$
+- Memoria: $O(n^2)$
+
+Esto significa que **duplicar el contexto cuadruplica el coste**.
+
+**Consecuencias practicas:**
+
+| Contexto | Coste relativo | Problema |
+|---|---|---|
+| 4K tokens | 1x | Basico |
+| 32K tokens | 64x | Costoso |
+| 128K tokens | 1024x | Muy costoso |
+| 1M tokens | 62,500x | Impracticable sin trucos |
+
+**Degradacion con longitud:**
+
+Incluso con contextos largos, la calidad se degrada:
+- "Lost in the middle": informacion en el centro del contexto se ignora
+- Mas contexto = mas ruido = mas alucinaciones
+- La atencion se "diluye" con secuencias largas
+
+### 2. Pesos estaticos (no hay aprendizaje online)
+
+Una vez entrenado, un LLM tiene pesos fijos:
+
+$$
+\theta^* = \arg\min_\theta \mathcal{L}(\theta; \mathcal{D}_{\text{train}})
+$$
+
+Despues del entrenamiento:
+- $\theta^*$ **nunca cambia** durante inferencia
+- El modelo no puede incorporar informacion nueva
+- No hay aprendizaje continuo real
+
+**Lo que el usuario percibe:**
+- El modelo "olvida" entre sesiones
+- No puede aprender de errores pasados
+- Conocimiento congelado en la fecha de corte
+
+## Como se intenta resolver hoy (y por que no basta)
+
+### RAG (Retrieval Augmented Generation)
+
+```
+[Query] → [Vector DB Search] → [Contexto Recuperado] → [LLM + Contexto] → [Respuesta]
+```
+
+**Limitaciones:**
+- Sigue dependiendo del contexto (ventana finita)
+- No cambia el modelo, solo le da mas informacion
+- Calidad depende del retrieval (garbage in, garbage out)
+- No es "memoria" real, es busqueda
+
+### Fine-tuning / LoRA
+
+$$
+W' = W + \Delta W = W + BA
+$$
+
+**Limitaciones:**
+- Requiere datos etiquetados
+- Proceso offline (no es tiempo real)
+- Riesgo de catastrophic forgetting
+- No escala a aprendizaje continuo
+
+### In-Context Learning (ICL)
+
+Darle ejemplos en el prompt:
+```
+Ejemplo 1: entrada → salida
+Ejemplo 2: entrada → salida
+Ahora: nueva entrada → ?
+```
+
+**Limitaciones:**
+- Consume contexto valioso
+- No persiste entre sesiones
+- Limitado por la ventana de contexto
+- No es aprendizaje real, es "imitacion por patron"
+
+## La analogia con el cerebro humano
+
+El cerebro tiene al menos 3 sistemas de memoria:
+
+| Sistema | Funcion | Analogo en LLMs | Estado |
+|---|---|---|---|
+| **Memoria de trabajo** | Procesamiento inmediato | Contexto/prompt | Existe pero limitado |
+| **Memoria episodica** | Recuerdos especificos | No existe | RAG lo aproxima |
+| **Memoria a largo plazo** | Conocimiento consolidado | Pesos del modelo | Estatico |
+| **Aprendizaje online** | Adaptacion continua | No existe | El gran reto |
+
+## Lo que necesita un LLM de nueva generacion
+
+$$
+\text{LLM}_{\text{next-gen}} = \underbrace{f_\theta(x)}_{\text{computacion}} + \underbrace{M_{\text{work}}}_{\text{memoria de trabajo}} + \underbrace{M_{\text{episodic}}}_{\text{memoria episodica}} + \underbrace{\Delta\theta(t)}_{\text{aprendizaje online}}
+$$
+
+Donde:
+- $f_\theta(x)$ = computacion base (forward pass)
+- $M_{\text{work}}$ = estado interno dinamico (tipo Liquid/RWKV)
+- $M_{\text{episodic}}$ = almacenamiento externo (tipo MANN/RETRO)
+- $\Delta\theta(t)$ = pesos que evolucionan en tiempo real (tipo Fast Weights)
+
+**Esta es la vision que exploran las arquitecturas de esta guia.**

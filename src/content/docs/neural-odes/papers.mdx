@@ -1,0 +1,115 @@
+---
+title: "Neural ODEs - Papers"
+description: "Papers fundamentales y recientes sobre Neural ODEs"
+---
+
+# Neural ODEs - Papers
+
+## Papers Fundamentales
+
+### "Neural Ordinary Differential Equations"
+- **Autores**: Ricky T.Q. Chen, Yulia Rubanova, Jesse Bettencourt, David Duvenaud
+- **Año**: 2018
+- **Venue**: NeurIPS 2018 (**Best Paper Award**)
+- **Link**: https://arxiv.org/abs/1806.07366
+- **Contribucion**: EL paper fundacional. Propone reemplazar capas discretas por una ODE continua. Introduce el adjoint method para backpropagation con memoria constante. Demuestra aplicaciones en normalizing flows, series temporales y modelos generativos.
+
+### "Augmented Neural ODEs"
+- **Autores**: Emilien Dupont, Arnaud Doucet, Yee Whye Teh
+- **Año**: 2019
+- **Venue**: NeurIPS 2019
+- **Link**: https://arxiv.org/abs/1904.01681
+- **Contribucion**: Identifica una limitacion fundamental de Neural ODEs (no pueden representar funciones que requieren cruce de trayectorias) y la resuelve aumentando la dimension del espacio de estados. Simple pero critico.
+
+### "Latent ODEs for Irregularly-Sampled Time Series"
+- **Autores**: Yulia Rubanova, Ricky T.Q. Chen, David Duvenaud
+- **Año**: 2019
+- **Venue**: NeurIPS 2019
+- **Link**: https://arxiv.org/abs/1907.03907
+- **Contribucion**: Combina encoder RNN + ODE latente + decoder para modelar series temporales con muestreo irregular. Muy relevante para datos medicos, sensores, etc.
+
+### "Neural Controlled Differential Equations for Irregular Time Series"
+- **Autores**: Patrick Kidger, James Morrill, James Foster, Terry Lyons
+- **Año**: 2020
+- **Venue**: NeurIPS 2020
+- **Link**: https://arxiv.org/abs/2005.08926
+- **Contribucion**: Extiende Neural ODEs a CDEs donde la dinamica depende del input en cada momento (no solo del estado). Mucho mas expresivo para secuencias. Establece conexion formal con RNNs.
+
+### "FFJORD: Free-form Continuous Dynamics for Scalable Reversible Generative Models"
+- **Autores**: Will Grathwohl, Ricky T.Q. Chen, Jesse Bettencourt, David Duvenaud
+- **Año**: 2019
+- **Venue**: ICLR 2019
+- **Link**: https://arxiv.org/abs/1810.01367
+- **Contribucion**: Usa Neural ODEs para normalizing flows sin restricciones arquitecturales. Introduce la estimacion de traza por Hutchinson para calcular el log-determinante eficientemente.
+
+## Papers Recientes (2023-2025)
+
+### "Flow Matching for Generative Modeling"
+- **Autores**: Yaron Lipman, Ricky T.Q. Chen, Heli Ben-Hamu, Maximilian Nickel
+- **Año**: 2023
+- **Venue**: ICLR 2023
+- **Link**: https://arxiv.org/abs/2210.02747
+- **Contribucion**: Simplifica el entrenamiento de CNFs (Continuous Normalizing Flows) enormemente. En vez de resolver una ODE en entrenamiento, regresa directamente el campo vectorial. Base de muchos modelos generativos modernos (Stable Diffusion 3, etc.).
+
+### "Stochastic Interpolants: A Unifying Framework for Flows and Diffusions"
+- **Autores**: Michael Albergo, Nicholas Boffi, Eric Vanden-Eijnden
+- **Año**: 2023
+- **Venue**: ICML 2023
+- **Link**: https://arxiv.org/abs/2303.08797
+- **Contribucion**: Unifica diffusion models y flow matching bajo un mismo framework teorico basado en ODEs/SDEs.
+
+### "Conditional Flow Matching: Simulation-Free Training of Continuous Normalizing Flows"
+- **Autores**: Alexander Tong, Nikolay Malkin, et al.
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2302.00482
+- **Contribucion**: Extiende flow matching a generacion condicional. Muy influyente en generacion de imagenes y audio.
+
+### "Scaling Rectified Flow Transformers for High-Resolution Image Synthesis"
+- **Autores**: Stability AI (Esser et al.)
+- **Año**: 2024
+- **Venue**: ICML 2024
+- **Contribucion**: Stable Diffusion 3 usa rectified flows (una forma de Neural ODE) como backbone. Demuestra que las Neural ODEs escalan a generacion de imagenes de alta calidad.
+
+### "Neural ODE Control for Trajectory Planning"
+- **Autores**: Varios grupos
+- **Año**: 2024-2025
+- **Contribucion**: Aplicaciones modernas de Neural ODEs en robotica y planificacion con resultados state-of-the-art.
+
+## Papers sobre Aplicacion a Lenguaje / LLMs
+
+### "Diffusion Models for Text Generation"
+- **Conexion**: Los modelos de difusion para texto (MDLM, SEDD, Plaid) son esencialmente Neural SDEs/ODEs aplicadas a secuencias discretas.
+
+### "Simple and Effective Masked Diffusion Language Models" (MDLM)
+- **Autores**: Subham Sahoo, Marianne Arriola, et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2406.07524
+- **Contribucion**: Aplica difusion continua a generacion de texto. Competitivo con modelos autoregresivos en ciertas tareas. Usa una ODE/SDE de enmascaramiento continuo.
+
+### "Score Entropy Discrete Diffusion" (SEDD)
+- **Autores**: Aaron Lou, Chenlin Meng, Stefano Ermon
+- **Año**: 2024
+- **Contribucion**: Otro enfoque de difusion para texto discreto, con conexion a ODEs a traves del score matching.
+
+### "Continuous-Depth Transformers"
+- Linea de investigacion que modela la profundidad del transformer como una ODE continua, permitiendo profundidad adaptativa. Prometedor pero no competitivo aun con transformers estandar.
+
+### "Universal Transformers"
+- **Autores**: Mostafa Dehghani et al.
+- **Año**: 2019
+- **Contribucion**: Transformer con profundidad adaptativa (ACT). Conectado conceptualmente con Neural ODEs donde el solver decide cuantos pasos dar.
+
+## Mapa de Lectura Recomendado
+
+```
+Neural ODEs (Chen 2018) ← EMPEZAR AQUI
+    ├── Augmented NODEs (Dupont 2019)
+    ├── Latent ODEs (Rubanova 2019)
+    ├── FFJORD (Grathwohl 2019)
+    │     └── Flow Matching (Lipman 2023) ← MUY RELEVANTE
+    │           └── Stable Diffusion 3 (2024)
+    ├── Neural CDEs (Kidger 2020) ← IMPORTANTE para secuencias
+    └── Diffusion as ODE/SDE
+          ├── MDLM (2024) ← para texto
+          └── SEDD (2024) ← para texto
+```

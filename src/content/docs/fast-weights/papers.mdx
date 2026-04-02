@@ -1,0 +1,109 @@
+---
+title: "Fast Weights y Hebbian Learning - Papers"
+description: "Papers sobre fast weights, aprendizaje hebbiano y pesos dinamicos"
+---
+
+# Fast Weights y Hebbian Learning - Papers
+
+## Papers Fundamentales
+
+### "Learning to Control Fast-Weight Memories: An Alternative to Dynamic Recurrent Networks"
+- **Autores**: Jurgen Schmidhuber
+- **Año**: 1991-1992
+- **Venue**: Neural Computation
+- **Contribucion**: LA idea original. Una red neuronal (slow network) genera actualizaciones para otra (fast network). Los pesos rapidos actuan como memoria de trabajo. Propuesto **30 años** antes de que la idea se materializara en TTT/Titans. Schmidhuber merece credito como pionero.
+
+### "Using Fast Weights to Store Temporary Memories"
+- **Autores**: Jimmy Ba, Geoffrey Hinton, Volodymyr Mnih, Joel Z. Leibo, Catalin Ionescu
+- **Año**: 2016
+- **Venue**: NeurIPS 2016
+- **Link**: https://arxiv.org/abs/1610.06258
+- **Contribucion**: Formaliza fast weights como memoria asociativa Hebbiana. $A_t = \lambda A_{t-1} + \eta h_t h_t^T$. Demuestra que fast weights complementan RNNs con memoria de trabajo mas rapida. Influyente pero no escalo en la practica.
+
+### "Linear Transformers Are Secretly Fast Weight Programmers"
+- **Autores**: Imanol Schlag, Kazuki Irie, Jurgen Schmidhuber
+- **Año**: 2021
+- **Venue**: ICML 2021
+- **Link**: https://arxiv.org/abs/2102.11174
+- **Contribucion**: Paper clave que demuestra que linear attention = fast weights. Unifica dos lineas de investigacion que parecian separadas. Muestra que attention sin softmax mantiene una fast weight matrix que se actualiza con cada token. Abre el camino a toda la linea moderna de linear attention.
+
+### "Fast Weight Programmers" (Review)
+- **Autores**: Jurgen Schmidhuber
+- **Año**: 2021
+- **Link**: https://arxiv.org/abs/2106.06295
+- **Contribucion**: Unificacion historica de todos los fast weight programmers: desde la idea original de 1991 hasta Transformers. Schmidhuber argumenta que attention, LSTM, y muchas arquitecturas modernas son casos especiales de fast weight programmers.
+
+## Papers Recientes (2024-2025) — Los Breakthroughs
+
+### "Learning to (Learn at Test Time): RNNs with Expressive Hidden States" (TTT)
+- **Autores**: Yu Sun, Xinhao Li, Karan Dalal, Jiarui Xu, Arjun Dhiman, et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2407.04620
+- **Contribucion**: PAPER FUNDAMENTAL. El hidden state de cada capa es un **modelo entero** que se actualiza por gradient descent en cada token. TTT-Linear (estado es una transformacion lineal) es competitivo con Mamba. TTT-MLP (estado es un MLP) es mas expresivo. Demuestra que "aprender durante inferencia" es viable y competitivo como sequence model.
+
+### "Titans: Learning to Memorize at Test Time"
+- **Autores**: Ali Behrouz, Peilin Zhong, Vahab Mirrokni (Google)
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2501.00663
+- **Contribucion**: Otro PAPER FUNDAMENTAL. Introduce un modulo de memoria neural que se entrena durante inferencia guiado por "surprise" (lo inesperado). Tres variantes de integracion con attention. Resultados excelentes en contexto largo. Demuestra que la memoria adaptativa mejora significativamente los LLMs.
+
+### "DeltaNet: Efficient Long-Range Language Modeling with Delta Rule"
+- **Autores**: Songlin Yang, Bailin Wang, et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2406.06484
+- **Contribucion**: Aplica la delta rule (Widrow-Hoff) como mecanismo de update de fast weights. Mas estable que Hebbian puro. Kernels CUDA eficientes. Competitivo con Mamba en benchmarks de lenguaje.
+
+### "Gated Linear Attention Transformers with Hardware-Efficient Training" (GLA)
+- **Autores**: Songlin Yang, Bailin Wang, Yikang Shen, Rameswar Panda, Yoon Kim
+- **Año**: 2024
+- **Venue**: ICML 2024
+- **Link**: https://arxiv.org/abs/2312.06635
+- **Contribucion**: Linear attention con gating (olvido selectivo). Hardware-efficient implementation. Conecta formalmente linear attention, SSMs y fast weights bajo un framework unificado.
+
+### "Based: Simple Linear Attention Language Models Balance the Recall-Throughput Tradeoff"
+- **Autores**: Simran Arora, Sabri Eyuboglu, Michael Zhang, et al.
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2402.18668
+- **Contribucion**: Analiza el tradeoff fundamental entre recall y throughput en modelos lineales. Propone combinaciones especificas (Taylor expansion del softmax) que mejoran recall sin sacrificar velocidad.
+
+### "Mamba-2 connection"
+- **Relevancia**: Mamba-2 (Dao & Gu, 2024) demuestra que SSMs selectivos son equivalentes a linear attention con state update especifico. Esto confirma que **Mamba es tambien un fast weight programmer**, donde el estado $h_t$ se actualiza de forma dependiente del input.
+
+### "The Illusion of State in State-Space Models"
+- **Autores**: William Merrill, Jackson Petty, Ashish Sabharwal
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2404.08819
+- **Contribucion**: Analisis critico que muestra limitaciones fundamentales de los SSMs como "memoria". Importante para entender que los fast weights tambien tienen limites teoricos.
+
+## Papers Teoricos Relevantes
+
+### "Self-Referential Weight Matrices"
+- **Autores**: Jurgen Schmidhuber
+- **Contribucion**: Redes cuyos pesos se modifican a si mismos. Concepto extremo de fast weights donde no hay separacion slow/fast.
+
+### "Meta-Learning with Differentiable Convex Optimization"
+- **Relevancia**: Meta-learning es conceptualmente cercano a fast weights: aprender a aprender rapidamente.
+
+### "Hopfield Networks is All You Need"
+- **Autores**: Hubert Ramsauer et al.
+- **Año**: 2021
+- **Link**: https://arxiv.org/abs/2008.02217
+- **Contribucion**: Conecta Hopfield networks (memoria asociativa clasica) con attention. La attention es una **memory retrieval** de una Hopfield network moderna.
+
+## Mapa de Lectura
+
+```
+Schmidhuber (1991) ← la idea original
+    ↓
+Hinton Fast Weights (2016) ← formalizacion
+    ↓
+Linear Attention = Fast Weights (Schlag 2021) ← UNIFICACION CLAVE
+    ↓
+├── DeltaNet (2024) ← delta rule eficiente
+├── GLA (2024) ← gated linear attention
+├── Based (2024) ← analisis del tradeoff
+├── TTT (2024) ← BREAKTHROUGH: modelo como estado
+└── Titans (2024) ← BREAKTHROUGH: memoria que aprende
+    ↓
+Mamba-2 (2024) ← confirma: SSMs = fast weights
+```

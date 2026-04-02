@@ -1,0 +1,154 @@
+---
+title: "Liquid Neural Networks - Teoria"
+description: "Fundamentos matematicos y conceptuales de Liquid Neural Networks"
+---
+
+# Liquid Neural Networks - Fundamentos Teoricos
+
+## Origen
+
+Desarrolladas por el **MIT CSAIL** (Ramin Hasani, Mathias Lechner, Daniela Rus), inspiradas en el sistema nervioso de *C. elegans* — un gusano con solo 302 neuronas que exhibe comportamientos complejos como navegacion, busqueda de alimento y respuesta a estimulos.
+
+La pregunta central: **si 302 neuronas pueden generar comportamiento complejo, que estamos haciendo mal con millones de parametros?**
+
+## Idea Central
+
+Las Liquid Neural Networks (LNNs) son redes cuyo **estado interno evoluciona continuamente en el tiempo**, gobernado por ecuaciones diferenciales ordinarias (ODEs). A diferencia de las redes clasicas donde la activacion es una funcion puntual, aqui cada neurona tiene una **dinamica temporal propia**.
+
+## Matematicas Fundamentales
+
+### Liquid Time-Constant (LTC) Networks
+
+La dinamica de cada neurona se describe por:
+
+$$
+\frac{dx(t)}{dt} = -\frac{1}{\tau(t)} x(t) + f(x(t), I(t), \theta)
+$$
+
+Donde:
+- $x(t)$ = estado de la neurona en tiempo $t$
+- $\tau(t)$ = constante de tiempo **VARIABLE** (esto es la clave)
+- $I(t)$ = entrada externa
+- $\theta$ = parametros aprendidos
+- $f$ = funcion no lineal (tipicamente sigmoidal)
+
+### Lo que hace especial a $\tau(t)$
+
+En una RNN clasica, $\tau$ es fija. En LTC:
+
+$$
+\tau(t) = \tau_{\text{base}} + g(x(t), I(t))
+$$
+
+La constante de tiempo **depende del estado y la entrada**. Esto significa:
+- La red puede "acelerar" o "desacelerar" su procesamiento
+- Puede mantener informacion por periodos variables
+- Se adapta naturalmente a diferentes escalas temporales
+
+Mas formalmente, la dinamica completa de una neurona LTC es:
+
+$$
+\frac{dx_i}{dt} = -\left[\frac{1}{\tau_i} + f_i\left(\sum_j w_{ij} x_j(t) + I_i(t)\right)\right] x_i(t) + f_i\left(\sum_j w_{ij} x_j(t) + I_i(t)\right) A_i
+$$
+
+donde $f_i$ es una sigmoide, $w_{ij}$ son los pesos sinapticos, y $A_i$ es un parametro de amplitud.
+
+### Closed-form Continuous-depth (CfC) Networks
+
+Evolucion posterior que resuelve la ODE de **forma analitica** (closed-form), eliminando la necesidad de un solver numerico:
+
+$$
+x(t+1) = \sigma\left(-f(x(t), I(t)) \cdot t\right) \cdot x(t) + \left[1 - \sigma\left(-f(x(t), I(t)) \cdot t\right)\right] \cdot h(x(t), I(t))
+$$
+
+Donde:
+- $\sigma$ = funcion sigmoide (actua como gate de interpolacion)
+- $f$ = funcion que controla la tasa de "olvido" (backbone network)
+- $h$ = funcion que genera nuevo estado (head network)
+
+**Interpretacion**: CfC es una **interpolacion continua** entre el estado anterior $x(t)$ y un nuevo estado propuesto $h(x(t), I(t))$, donde la proporcion de mezcla depende de la dinamica del sistema.
+
+**Ventaja critica**: No necesitas un solver ODE numerico (como `dopri5` o `euler`), lo que hace CfC **ordenes de magnitud mas rapido** que LTC.
+
+## Propiedades Clave
+
+### 1. Memoria Implicita
+El estado $x(t)$ funciona como **memoria comprimida**. No necesitas almacenar todo el contexto — la informacion esta codificada en la trayectoria del sistema dinamico.
+
+$$
+\text{Memoria} \equiv \text{Trayectoria de } x(t) \text{ en el espacio de estados}
+$$
+
+### 2. Adaptabilidad Temporal
+Diferentes neuronas pueden operar en **diferentes escalas temporales** simultaneamente:
+- Neuronas con $\tau$ grande: memoria a largo plazo (cambian lento)
+- Neuronas con $\tau$ pequeno: respuesta rapida (cambian rapido)
+
+Esto es analogo a como el cerebro tiene circuitos rapidos (reflejos) y lentos (planificacion).
+
+### 3. Expresividad con Pocos Parametros
+El paper original demostro que **19 neuronas LTC** podian hacer lo que requeria miles de neuronas convencionales en tareas de conduccion autonoma.
+
+| Modelo | Neuronas | Tarea |
+|---|---|---|
+| CNN clasica | ~100,000 | Lane keeping |
+| LSTM | ~5,000 | Lane keeping |
+| NCP (LTC) | **19** | Lane keeping (mejor rendimiento) |
+
+### 4. Causalidad Natural
+Al ser un sistema dinamico continuo, la causalidad esta embebida: el futuro depende del pasado de forma natural, a diferencia de transformers bidireccionales donde el modelo "ve" todo el contexto a la vez.
+
+### 5. Interpretabilidad
+Puedes analizar la dinamica del sistema:
+- Visualizar atractores (estados estables)
+- Trazar bifurcaciones (cambios de comportamiento)
+- Identificar que neurona responde a que estimulo
+
+## Comparacion con Arquitecturas Clasicas
+
+| Propiedad | RNN | LSTM | Transformer | Liquid NN |
+|---|---|---|---|---|
+| Estado interno | Fijo entre pasos | Gates fijas | No tiene (atencion) | Evoluciona continuamente |
+| Escala temporal | Discreta, fija | Discreta, gates | Posicional | Continua, adaptativa |
+| Memoria | Corto plazo | Medio plazo | Contexto $O(n^2)$ | Implicita en dinamica |
+| Parametros | Muchos | Muchos | Muchisimos | **Muy pocos** |
+| Interpretabilidad | Baja | Media | Baja | **Alta** |
+| Causalidad | Natural | Natural | Artificial (masking) | **Natural** |
+| Adaptacion temporal | No | Parcial (gates) | No | **Si** |
+
+## Conexion con Teoria de Sistemas Dinamicos
+
+Las LNNs son esencialmente **sistemas dinamicos no lineales parametrizados**:
+
+- **Atractores**: Estados estables a los que converge el sistema (representan "conceptos" o "memorias")
+- **Bifurcaciones**: Cambios cualitativos de comportamiento cuando cambian parametros (el sistema "cambia de opinion")
+- **Estabilidad de Lyapunov**: Se puede analizar formalmente cuando el sistema es estable
+
+$$
+V(x) > 0, \quad \dot{V}(x) \leq 0 \implies \text{estabilidad}
+$$
+
+- **Teoria de control**: Se pueden disenar controladores para guiar la dinamica
+
+Esto es importante porque significa que tenemos **herramientas matematicas maduras** para analizar LNNs, a diferencia de los transformers donde el analisis teorico es mucho mas limitado.
+
+## Topologia de Conexiones: Neural Circuit Policies
+
+Las LNNs no usan conectividad completa. Siguen una topologia inspirada en *C. elegans*:
+
+| Tipo de neurona | Funcion | Conectividad |
+|---|---|---|
+| **Sensory** | Reciben input | Solo salida |
+| **Inter** | Procesamiento intermedio | Bidireccional |
+| **Command** | Toma de decisiones | Recurrente |
+| **Motor** | Producen output | Solo entrada |
+
+Esta estructura jerarquica (sensory → inter → command → motor) es lo que permite la eficiencia extrema de parametros.
+
+## Limitaciones Teoricas
+
+1. **Escalabilidad**: No esta claro como escalar a billones de parametros — la topologia NCP limita el ancho
+2. **Entrenamiento**: BPTT con ODEs es costoso (aunque CfC mitiga esto)
+3. **Discretizacion**: En la practica se discretiza la ODE, perdiendo parte de la elegancia continua
+4. **NLP**: La mayoria de resultados son en control/series temporales, no procesamiento de lenguaje
+5. **Paralelismo**: La naturaleza secuencial de las ODEs dificulta la paralelizacion en GPU

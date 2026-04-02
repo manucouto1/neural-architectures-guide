@@ -1,0 +1,290 @@
+---
+title: "Roadmap de Implementacion"
+description: "Orden practico para estudiar e implementar un LLM de nueva generacion"
+---
+
+# Roadmap: De la Teoria a la Implementacion
+
+## Filosofia del roadmap
+
+No intentes construir todo a la vez. Cada fase produce un modelo funcional que puedes evaluar antes de anadir complejidad.
+
+## Fase 0: Fundamentos (2-4 semanas)
+
+### Que estudiar
+- [ ] Transformers en profundidad (attention, FFN, positional encoding)
+- [ ] Backpropagation through time (BPTT)
+- [ ] Ecuaciones diferenciales ordinarias basicas
+- [ ] Algebra lineal: descomposiciones, operadores lineales
+- [ ] Teoria de control basica (sistemas dinamicos)
+
+### Recursos clave
+| Tema | Recurso | Formato |
+|---|---|---|
+| Transformers | "Attention Is All You Need" + The Illustrated Transformer | Paper + blog |
+| Deep Learning | "Deep Learning" (Goodfellow et al.) Cap 10 (RNNs) | Libro |
+| ODEs | 3Blue1Brown - Differential Equations | Video |
+| Algebra lineal | "Linear Algebra Done Right" (Axler) | Libro |
+| Sistemas dinamicos | Strogatz - Nonlinear Dynamics | Libro |
+
+### Proyecto practico
+Implementar un Transformer mini desde cero en PyTorch (solo decoder, ~10M params). Entrenarlo en un dataset pequeno (TinyStories, Shakespeare).
+
+```python
+# Lo minimo que debes ser capaz de implementar:
+class MiniTransformer:
+    def __init__(self):
+        self.embedding = ...
+        self.layers = [TransformerBlock() for _ in range(6)]
+        self.head = ...
+    
+    def forward(self, tokens):
+        x = self.embedding(tokens)
+        for layer in self.layers:
+            x = layer(x)  # attention + FFN
+        return self.head(x)
+```
+
+---
+
+## Fase 1: SSMs y el Backbone Eficiente (3-4 semanas)
+
+### Que estudiar (en este orden)
+1. **S4**: El paper fundacional de SSMs
+2. **Mamba**: Selective state spaces
+3. **RWKV**: WKV mechanism
+4. **Mamba-2**: Conexion SSM-Attention
+
+### Papers obligatorios
+1. S4: "Efficiently Modeling Long Sequences with Structured State Spaces"
+2. Mamba: "Linear-Time Sequence Modeling with Selective State Spaces"
+3. RWKV: "Reinventing RNNs for the Transformer Era"
+
+### Proyecto practico
+Implementar y entrenar un modelo tipo Mamba pequeno (~50M params):
+
+```python
+# Entender estas operaciones es critico:
+# 1. Discretizacion: continuo → discreto
+A_bar = exp(delta * A)
+B_bar = (exp(delta * A) - I) * inv(A) * B
+
+# 2. Selective scan: la innovacion de Mamba
+# B, C, delta dependen del input (selectividad)
+
+# 3. Hardware-efficient: parallel scan en GPU
+```
+
+**Benchmark**: Comparar perplexity vs tu Transformer mini en el mismo dataset.
+
+### Entregable
+Un modelo Mamba funcional que puedas comparar token por token con el Transformer.
+
+---
+
+## Fase 2: Hibrido SSM + Attention (2-3 semanas)
+
+### Que estudiar
+1. **Jamba**: Como AI21 mezcla Mamba + Attention
+2. **Griffin/RecurrentGemma**: El approach de Google
+3. **Zamba**: Otra variante hibrida
+
+### Papers obligatorios
+1. Jamba: "Jamba: A Hybrid Transformer-Mamba Language Model"
+2. Griffin: "Griffin: Mixing Gated Linear Recurrences with Local Attention"
+
+### Proyecto practico
+Modificar tu modelo Mamba para intercalar capas de attention:
+
+```python
+class HybridBlock(nn.Module):
+    def __init__(self, d_model, layer_idx, total_layers):
+        # Cada N capas, usar attention en vez de SSM
+        if layer_idx % 4 == 0:  # 25% attention
+            self.mixer = MultiHeadAttention(d_model)
+        else:
+            self.mixer = MambaBlock(d_model)
+        self.norm = RMSNorm(d_model)
+        self.ffn = SwiGLU(d_model)
+```
+
+**Benchmark**: Evaluar recall (needle-in-haystack), perplexity, y velocidad de inferencia.
+
+### Entregable
+Modelo hibrido que supere tanto al Transformer puro como al Mamba puro en al menos una metrica.
+
+---
+
+## Fase 3: Memoria de Trabajo - Fast Weights (3-4 semanas)
+
+### Que estudiar
+1. **Linear Transformers como Fast Weights**: El paper de Schlag et al.
+2. **TTT**: Test-Time Training layers
+3. **Titans**: Learning to Memorize at Test Time
+4. **DeltaNet**: Variante eficiente
+
+### Papers obligatorios
+1. "Linear Transformers Are Secretly Fast Weight Programmers"
+2. "Learning to (Learn at Test Time): RNNs with Expressive Hidden States"
+3. "Titans: Learning to Memorize at Test Time"
+
+### Proyecto practico
+Anadir una TTT layer a tu modelo hibrido:
+
+```python
+class TTTLayer(nn.Module):
+    """El hidden state es un mini-modelo que se actualiza por token"""
+    def __init__(self, d_model, inner_dim=64):
+        self.W = nn.Parameter(torch.randn(inner_dim, d_model) * 0.01)
+        self.lr = nn.Parameter(torch.tensor(0.01))  # learning rate aprendible
+    
+    def forward(self, x):
+        batch, seq_len, d = x.shape
+        W = self.W.clone()
+        outputs = []
+        for t in range(seq_len):
+            # Forward con pesos actuales
+            out = W @ x[:, t]
+            outputs.append(out)
+            # Self-supervised update
+            loss = self.self_supervised_loss(x[:, t], W)
+            grad = torch.autograd.grad(loss, W)
+            W = W - self.lr * grad
+        return torch.stack(outputs, dim=1)
+```
+
+**Benchmark**: Evaluar si la TTT layer mejora en tareas que requieren adaptacion (few-shot, seguir instrucciones nuevas).
+
+### Entregable
+Modelo hibrido + TTT que demuestre capacidad de "aprender" durante inferencia.
+
+---
+
+## Fase 4: Memoria Episodica - MANN (3-4 semanas)
+
+### Que estudiar
+1. **Neural Turing Machines**: El fundamento
+2. **Differentiable Neural Computer**: La evolucion
+3. **Memorizing Transformers**: Version moderna
+4. **Infini-attention**: Compresion de memoria
+
+### Papers obligatorios
+1. "Neural Turing Machines" (Graves et al., 2014)
+2. "Memorizing Transformers" (Wu et al., 2022)
+3. "Leave No Context Behind: Infini-attention"
+
+### Proyecto practico
+Anadir un modulo de memoria externa a tu modelo:
+
+```python
+class MemoryModule(nn.Module):
+    def __init__(self, num_slots=1024, slot_dim=256, d_model=512):
+        self.memory = nn.Parameter(torch.zeros(num_slots, slot_dim))
+        self.query_proj = nn.Linear(d_model, slot_dim)
+        self.write_proj = nn.Linear(d_model, slot_dim)
+        self.erase_proj = nn.Linear(d_model, slot_dim)
+        self.output_proj = nn.Linear(slot_dim + d_model, d_model)
+    
+    def forward(self, x, memory_state):
+        # Read
+        query = self.query_proj(x)
+        weights = softmax(query @ memory_state.T / sqrt(d))
+        read_out = weights @ memory_state
+        
+        # Write
+        write_content = self.write_proj(x)
+        erase = sigmoid(self.erase_proj(x))
+        memory_state = memory_state * (1 - weights.T @ erase) + weights.T @ write_content
+        
+        # Combine
+        output = self.output_proj(cat([x, read_out], dim=-1))
+        return output, memory_state
+```
+
+**Benchmark**: Evaluar en tareas que requieren recordar informacion de muy atras en el contexto.
+
+### Entregable
+Modelo completo con backbone hibrido + TTT + MANN.
+
+---
+
+## Fase 5: Integracion y Evaluacion (2-3 semanas)
+
+### Que hacer
+1. Integrar todos los componentes
+2. Entrenar end-to-end en un dataset significativo (SlimPajama, FineWeb)
+3. Evaluar exhaustivamente
+
+### Benchmarks criticos
+
+| Benchmark | Que mide | Objetivo |
+|---|---|---|
+| Perplexity (val) | Calidad general | Comparable a Transformer del mismo tamano |
+| MMLU (few-shot) | Conocimiento | Baseline razonable |
+| Needle-in-haystack | Recall en contexto largo | Mejor que Mamba puro |
+| Adaptation test | Aprende de ejemplos in-context | Mejor que Transformer (por TTT) |
+| Memory test | Recuerda info de hace N tokens | Mejor que todos (por MANN) |
+| Tokens/segundo | Velocidad de inferencia | Mejor que Transformer (estado fijo vs KV-cache) |
+
+### Ablation studies
+Quitar cada componente y medir el impacto:
+- Sin capas de attention → recall baja?
+- Sin TTT → adaptacion baja?
+- Sin MANN → memoria a largo plazo baja?
+- Sin SSM → velocidad baja?
+
+---
+
+## Fase 6: Escalado y Optimizacion (ongoing)
+
+### Optimizaciones criticas
+- Custom CUDA kernels para SSM (Tri Dao's approach)
+- Flash attention para las capas de attention
+- Efficient memory access patterns para MANN
+- Mixed precision training (BF16)
+- Gradient checkpointing
+
+### Escalado
+| Tamano | Parametros | GPU requerida | Dataset |
+|---|---|---|---|
+| Toy | 10M | 1x RTX 3090 | TinyStories |
+| Small | 125M | 1x A100 | OpenWebText |
+| Medium | 1B | 4x A100 | SlimPajama |
+| Large | 7B | 8x A100/H100 | FineWeb |
+
+---
+
+## Resumen del stack tecnologico
+
+| Herramienta | Uso |
+|---|---|
+| **PyTorch** | Framework principal |
+| **mamba-ssm** | Kernels eficientes para SSM |
+| **FlashAttention** | Attention optimizada |
+| **DeepSpeed / FSDP** | Entrenamiento distribuido |
+| **WandB** | Tracking de experimentos |
+| **lm-evaluation-harness** | Benchmarks estandar |
+| **HuggingFace** | Tokenizer, datasets, sharing |
+
+---
+
+## Timeline estimado
+
+```
+Fase 0: Fundamentos         [████████░░░░░░░░░░░░░░░░] 2-4 sem
+Fase 1: SSMs                [░░░░████████░░░░░░░░░░░░] 3-4 sem
+Fase 2: Hibrido             [░░░░░░░░░░██████░░░░░░░░] 2-3 sem
+Fase 3: Fast Weights        [░░░░░░░░░░░░░░████████░░] 3-4 sem
+Fase 4: MANN                [░░░░░░░░░░░░░░░░░░██████] 3-4 sem
+Fase 5: Integracion         [░░░░░░░░░░░░░░░░░░░░████] 2-3 sem
+                             ─────────────────────────
+                             Total: ~4-6 meses
+```
+
+---
+
+## Consejo final
+
+> Cada fase produce algo **funcional y evaluable**. No avances a la siguiente fase sin haber benchmarked la anterior. El progreso se mide en metricas, no en lineas de codigo.
+
+Lo mas importante no es implementar todo — es entender **por que** cada componente aporta algo que los demas no pueden dar. Si entiendes eso, podras tomar decisiones de diseno informadas cuando surjan tradeoffs inevitables.

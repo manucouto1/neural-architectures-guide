@@ -1,0 +1,222 @@
+---
+title: "Spiking Neural Networks - Frameworks"
+description: "Librerias y herramientas para implementar Spiking Neural Networks"
+---
+
+# Spiking Neural Networks - Frameworks
+
+## snnTorch (El mas popular)
+
+- **Repo**: https://github.com/jeshraghian/snntorch
+- **Backend**: PyTorch
+- **Documentacion**: Excelente (tutoriales paso a paso)
+- **Instalacion**: `pip install snntorch`
+
+```python
+import torch
+import snntorch as snn
+from snntorch import surrogate
+
+# Neurona LIF
+beta = 0.9  # factor de decaimiento
+lif = snn.Leaky(beta=beta, threshold=1.0)
+
+# Red SNN completa
+class SpikingNet(torch.nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super().__init__()
+        self.fc1 = torch.nn.Linear(input_size, hidden_size)
+        self.lif1 = snn.Leaky(beta=0.9, spike_grad=surrogate.fast_sigmoid())
+        self.fc2 = torch.nn.Linear(hidden_size, output_size)
+        self.lif2 = snn.Leaky(beta=0.9, spike_grad=surrogate.fast_sigmoid())
+    
+    def forward(self, x, num_steps=25):
+        mem1 = self.lif1.init_leaky()
+        mem2 = self.lif2.init_leaky()
+        
+        spk_out = []
+        mem_out = []
+        
+        for step in range(num_steps):
+            cur1 = self.fc1(x)
+            spk1, mem1 = self.lif1(cur1, mem1)
+            cur2 = self.fc2(spk1)
+            spk2, mem2 = self.lif2(cur2, mem2)
+            spk_out.append(spk2)
+            mem_out.append(mem2)
+        
+        return torch.stack(spk_out), torch.stack(mem_out)
+
+model = SpikingNet(784, 256, 10)
+```
+
+### Tipos de neuronas en snnTorch
+
+| Neurona | Clase | Caracteristica |
+|---|---|---|
+| Leaky IF | `snn.Leaky` | LIF estandar |
+| Synaptic | `snn.Synaptic` | LIF + corriente sinaptica |
+| Alpha | `snn.Alpha` | Doble decaimiento exponencial |
+| Recurrent LIF | `snn.RLeaky` | LIF con conexiones recurrentes |
+| LSTM-like | `snn.SLSTM` | SNN con gates tipo LSTM |
+
+## Norse (Biologicamente inspirado)
+
+- **Repo**: https://github.com/norse/norse
+- **Backend**: PyTorch
+- **Enfoque**: Modelos biologicos mas realistas
+- **Instalacion**: `pip install norse`
+
+```python
+import norse.torch as norse
+
+# Neurona LIF con parametros biologicos
+cell = norse.LIFCell(p=norse.LIFParameters(
+    tau_mem_inv=torch.tensor(100.0),  # 1/tau
+    v_th=torch.tensor(1.0),
+    v_reset=torch.tensor(0.0)
+))
+
+# Forward (un paso temporal)
+state = norse.LIFState(v=torch.zeros(batch_size, hidden_size),
+                        i=torch.zeros(batch_size, hidden_size))
+input_current = torch.randn(batch_size, hidden_size)
+output, new_state = cell(input_current, state)
+```
+
+## SpikingJelly (Completo, con CUDA custom)
+
+- **Repo**: https://github.com/fangwei123456/spikingjelly
+- **Backend**: PyTorch
+- **Ventaja**: Kernels CUDA optimizados para SNNs
+- **Instalacion**: `pip install spikingjelly`
+
+```python
+from spikingjelly.activation_based import neuron, layer, functional
+
+# Red spiking con capas de SpikingJelly
+net = torch.nn.Sequential(
+    layer.Linear(784, 256),
+    neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+    layer.Linear(256, 10),
+    neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan())
+)
+
+# Multi-step mode (mas eficiente)
+functional.set_step_mode(net, 'm')
+x = torch.randn(T, batch_size, 784)  # T timesteps
+output = net(x)
+```
+
+## Lava (Intel, para Loihi)
+
+- **Repo**: https://github.com/lava-nc/lava
+- **Para**: Programar hardware neuromorfico Intel Loihi
+- **Ventaja**: Ejecucion directa en hardware neuromorfico
+
+```python
+from lava.proc.lif.process import LIF
+from lava.proc.dense.process import Dense
+
+# Crear procesos neuromorficos
+dense = Dense(weights=weight_matrix)
+lif = LIF(shape=(n_neurons,), du=0.1, dv=0.1, vth=1.0)
+
+# Conectar
+dense.s_out.connect(lif.a_in)
+```
+
+## BindsNET (Aprendizaje no supervisado)
+
+- **Repo**: https://github.com/BindsNET/bindsnet
+- **Enfoque**: STDP y aprendizaje biologico
+- **Instalacion**: `pip install bindsnet`
+
+## Brian2 (Simulador de neurociencia)
+
+- **Repo**: https://github.com/brian-team/brian2
+- **Para**: Simulaciones biologicas detalladas (no deep learning)
+- **Instalacion**: `pip install brian2`
+
+## Hardware Neuromorfico
+
+| Chip | Fabricante | Neuronas | Estado |
+|---|---|---|---|
+| **Loihi 2** | Intel | 1M por chip | Investigacion, disponible via INRC |
+| **Akida** | BrainChip | 1.2M | Comercial, edge AI |
+| **SpiNNaker 2** | U. Manchester | 10M por board | Investigacion |
+| **TrueNorth** | IBM | 1M por chip | Discontinuado |
+| **Xylo** | SynSense | Bajo consumo | Edge, audio |
+
+### Intel Loihi 2
+- **Proceso**: Intel 4 (7nm equiv.)
+- **Neuronas programables**: Puedes definir modelos arbitrarios
+- **Eficiencia**: 100-1000x mas eficiente que GPU para ciertos workloads SNN
+- **Acceso**: Via Intel Neuromorphic Research Community (INRC)
+
+## Ejemplo Completo: Clasificacion MNIST con snnTorch
+
+```python
+import torch
+import torch.nn as nn
+import snntorch as snn
+from snntorch import surrogate, utils
+from torchvision import datasets, transforms
+
+# Hiperparametros
+num_steps = 25
+beta = 0.95
+batch_size = 128
+
+# Data
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,))
+])
+train_data = datasets.MNIST('./data', train=True, transform=transform, download=True)
+train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
+# Modelo
+class SNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 512)
+        self.lif1 = snn.Leaky(beta=beta, spike_grad=surrogate.fast_sigmoid(slope=25))
+        self.fc2 = nn.Linear(512, 10)
+        self.lif2 = snn.Leaky(beta=beta, spike_grad=surrogate.fast_sigmoid(slope=25))
+    
+    def forward(self, x):
+        mem1 = self.lif1.init_leaky()
+        mem2 = self.lif2.init_leaky()
+        spk2_rec = []
+        
+        for _ in range(num_steps):
+            spk1, mem1 = self.lif1(self.fc1(x), mem1)
+            spk2, mem2 = self.lif2(self.fc2(spk1), mem2)
+            spk2_rec.append(spk2)
+        
+        return torch.stack(spk2_rec, dim=0)  # (T, batch, 10)
+
+model = SNN()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+loss_fn = snn.functional.ce_rate_loss()  # rate-coded cross-entropy
+
+# Training loop
+for epoch in range(10):
+    for data, targets in train_loader:
+        data = data.view(batch_size, -1)
+        spk_rec = model(data)
+        loss = loss_fn(spk_rec, targets)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+```
+
+## Tips Practicos
+
+1. **Empieza con snnTorch** — mejor documentacion y tutoriales
+2. **Surrogate gradient**: `fast_sigmoid` con `slope=25` es un buen default
+3. **Num steps**: 25-50 pasos temporales suele bastar
+4. **Beta (decaimiento)**: 0.9-0.95 para la mayoria de tareas
+5. **Rate coding** para empezar, temporal coding cuando necesites eficiencia
+6. **No esperes superar ANNs** en precision — el valor esta en eficiencia energetica

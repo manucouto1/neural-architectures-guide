@@ -1,0 +1,196 @@
+---
+title: "RWKV y RNNs Modernos - Frameworks"
+description: "Librerias para RWKV, Mamba, SSMs"
+---
+
+# RWKV y RNNs Modernos - Frameworks
+
+## Mamba
+
+### mamba-ssm (Oficial)
+- **Repo**: https://github.com/state-spaces/mamba
+- **Autores**: Albert Gu, Tri Dao
+- **Instalacion**: `pip install mamba-ssm`
+- **Requisito**: CUDA (kernels custom obligatorios)
+
+```python
+from mamba_ssm import Mamba
+
+# Capa Mamba individual
+mamba_layer = Mamba(
+    d_model=768,     # dimension del modelo
+    d_state=16,      # dimension del estado SSM (N)
+    d_conv=4,        # tamano del kernel de convolucion
+    expand=2         # factor de expansion (d_inner = expand * d_model)
+)
+
+x = torch.randn(batch_size, seq_len, 768)
+y = mamba_layer(x)  # (batch, seq_len, 768)
+```
+
+### Modelo completo Mamba
+```python
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+
+# Mamba como language model
+model = MambaLMHeadModel(
+    d_model=768,
+    n_layer=24,
+    vocab_size=50257,
+    ssm_cfg={"d_state": 16, "d_conv": 4, "expand": 2}
+)
+
+# Generacion
+input_ids = torch.tensor([[1, 2, 3, 4]])
+output = model.generate(input_ids, max_length=100, temperature=0.7)
+```
+
+### Modelos pre-entrenados en HuggingFace
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Mamba 2.8B
+model = AutoModelForCausalLM.from_pretrained("state-spaces/mamba-2.8b-hf")
+tokenizer = AutoTokenizer.from_pretrained("state-spaces/mamba-2.8b-hf")
+
+inputs = tokenizer("The capital of France is", return_tensors="pt")
+output = model.generate(**inputs, max_new_tokens=20)
+print(tokenizer.decode(output[0]))
+```
+
+## RWKV
+
+### rwkv package
+- **Repo**: https://github.com/BlinkDL/RWKV-LM
+- **Instalacion**: `pip install rwkv`
+
+```python
+from rwkv.model import RWKV
+from rwkv.utils import PIPELINE
+
+# Cargar modelo
+model = RWKV(model="/path/to/RWKV-x-World-7B", strategy='cuda fp16')
+pipeline = PIPELINE(model, "rwkv_vocab_v20230424")
+
+# Generar
+result = pipeline.generate("The meaning of life is", token_count=100)
+print(result)
+```
+
+### ChatRWKV
+- **Repo**: https://github.com/BlinkDL/ChatRWKV
+- **Para**: Chat interface sobre RWKV
+- **Modelos**: Disponibles en HuggingFace bajo `RWKV/`
+
+### Modelos disponibles
+| Modelo | Params | Nota |
+|---|---|---|
+| RWKV-5 World | 0.4B - 7B | Multilingue |
+| RWKV-6 World | 0.1B - 14B | Mejor calidad |
+| RWKV-7 | En desarrollo | Estado del arte RWKV |
+
+## State Spaces (S4/S5)
+
+### state-spaces repo
+- **Repo**: https://github.com/state-spaces/s4
+- **Autor**: Albert Gu
+- **Para**: Implementaciones de referencia de S4, S5, H3
+
+```python
+# S4 layer
+from models.s4.s4 import S4
+
+layer = S4(
+    d_model=256,
+    d_state=64,
+    bidirectional=False,
+    dropout=0.1
+)
+```
+
+## Modelos Hibridos
+
+### Jamba (AI21)
+```python
+from transformers import AutoModelForCausalLM
+
+# Jamba: hibrido Mamba + Transformer + MoE
+model = AutoModelForCausalLM.from_pretrained(
+    "ai21labs/Jamba-v0.1",
+    torch_dtype=torch.bfloat16,
+    device_map="auto"
+)
+```
+
+### Zamba (Zyphra)
+```python
+# Zamba: hibrido SSM + shared attention
+model = AutoModelForCausalLM.from_pretrained(
+    "Zyphra/Zamba2-7B",
+    torch_dtype=torch.bfloat16,
+    device_map="auto"
+)
+```
+
+## Ejemplo: Entrenar un SSM desde Cero
+
+```python
+import torch
+import torch.nn as nn
+from mamba_ssm import Mamba
+
+class SimpleMambaLM(nn.Module):
+    def __init__(self, vocab_size, d_model, n_layers):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.layers = nn.ModuleList([
+            nn.Sequential(
+                nn.LayerNorm(d_model),
+                Mamba(d_model=d_model, d_state=16, d_conv=4, expand=2),
+            )
+            for _ in range(n_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model)
+        self.head = nn.Linear(d_model, vocab_size, bias=False)
+        # Weight tying
+        self.head.weight = self.embedding.weight
+    
+    def forward(self, input_ids):
+        x = self.embedding(input_ids)
+        for layer in self.layers:
+            x = x + layer(x)  # residual
+        x = self.norm(x)
+        return self.head(x)
+
+# Modelo ~125M params
+model = SimpleMambaLM(vocab_size=50257, d_model=768, n_layers=24)
+
+# Entrenamiento standard
+optimizer = torch.optim.AdamW(model.parameters(), lr=6e-4, weight_decay=0.1)
+criterion = nn.CrossEntropyLoss()
+```
+
+## Herramientas de Ecosistema
+
+### flash-linear-attention
+- **Repo**: https://github.com/sustcsonglin/flash-linear-attention
+- **Para**: Kernels CUDA eficientes para linear attention, GLA, RetNet, RWKV
+- **Muy util** para experimentar con variantes de attention lineal
+
+### lm-evaluation-harness
+- **Repo**: https://github.com/EleutherAI/lm-evaluation-harness
+- **Para**: Evaluar modelos en benchmarks estandar (MMLU, HellaSwag, etc.)
+- Soporta Mamba y RWKV
+
+## Tips Practicos
+
+| Aspecto | Recomendacion |
+|---|---|
+| **GPU** | Mamba requiere CUDA. A100/H100 recomendado. RTX 3090/4090 funciona |
+| **Precision** | BF16 para entrenamiento, FP16 para inferencia |
+| **Batch size** | Grande (256+) para estabilidad. Gradient accumulation si no cabe |
+| **Learning rate** | 3e-4 a 6e-4 con cosine schedule |
+| **Warmup** | 1-2% del total de steps |
+| **Mamba d_state** | 16 es default y funciona bien. 64 para tareas de memoria |
+| **RWKV strategy** | `cuda fp16` para inferencia rapida |
+| **Evaluacion** | Siempre comparar con Transformer del mismo tamano |

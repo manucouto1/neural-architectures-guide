@@ -1,0 +1,173 @@
+---
+title: "Memory-Augmented Networks - Teoria"
+description: "Fundamentos matematicos de Memory-Augmented Neural Networks"
+---
+
+# Memory-Augmented Neural Networks - Fundamentos Teoricos
+
+## Motivacion: La Arquitectura von Neumann para Redes Neuronales
+
+Un ordenador clasico separa **computacion** (CPU) de **almacenamiento** (RAM). Las redes neuronales clasicas no — mezclan todo en los pesos. Las MANNs introducen esta separacion:
+
+| Componente | Ordenador | MANN |
+|---|---|---|
+| CPU | Procesador | Red neuronal (controller) |
+| RAM | Memoria | Matriz de memoria externa |
+| Bus | Lectura/escritura | Mecanismos de atencion diferenciables |
+
+## Neural Turing Machines (NTM)
+
+Propuestas por **Alex Graves et al. (2014)** en DeepMind. La idea: una red neuronal con acceso a una **cinta de memoria externa** tipo maquina de Turing, pero **diferenciable**.
+
+### Arquitectura:
+
+```
+                    ┌──────────────┐
+    Input ────────→ │  Controller  │ ────────→ Output
+                    │  (LSTM/FFN)  │
+                    └──────┬───────┘
+                           │
+                    ┌──────┴───────┐
+                    │  Read/Write  │
+                    │    Heads     │
+                    └──────┬───────┘
+                           │
+                    ┌──────┴───────┐
+                    │   Memory     │
+                    │  M ∈ R^{N×D} │
+                    └──────────────┘
+```
+
+### Mecanismos de direccionamiento
+
+#### Content-based addressing
+
+Buscar en memoria por **similitud** con una query:
+
+$$
+w_t^c(i) = \frac{\exp\left(\beta_t \cdot K[k_t, M_t(i)]\right)}{\sum_j \exp\left(\beta_t \cdot K[k_t, M_t(j)]\right)}
+$$
+
+Donde:
+- $k_t$ = vector de query (generado por el controller)
+- $M_t(i)$ = fila $i$ de la memoria
+- $K[u, v] = \frac{u \cdot v}{\|u\| \|v\|}$ = similitud coseno
+- $\beta_t$ = "sharpness" (temperatura inversa)
+
+#### Location-based addressing
+
+Manipular la posicion de atencion directamente:
+
+1. **Interpolacion** con posicion anterior: $w_t^g = g_t w_t^c + (1 - g_t) w_{t-1}$
+2. **Shift convolucional**: $\tilde{w}_t(i) = \sum_j w_t^g(j) \cdot s_t(i - j)$
+3. **Sharpening**: $w_t(i) = \frac{\tilde{w}_t(i)^{\gamma_t}}{\sum_j \tilde{w}_t(j)^{\gamma_t}}$
+
+### Operacion de lectura
+
+$$
+r_t = \sum_{i=0}^{N-1} w_t^r(i) \cdot M_t(i)
+$$
+
+Es una combinacion ponderada de todas las filas de memoria. Completamente diferenciable.
+
+### Operacion de escritura
+
+Dos pasos — **borrar** y **añadir**:
+
+$$
+\tilde{M}_t(i) = M_{t-1}(i) \cdot \left[1 - w_t^w(i) \cdot e_t\right]
+$$
+
+$$
+M_t(i) = \tilde{M}_t(i) + w_t^w(i) \cdot a_t
+$$
+
+Donde:
+- $e_t$ = vector de borrado (erase vector)
+- $a_t$ = vector de adicion (add vector)
+- $w_t^w$ = pesos de escritura
+
+## Differentiable Neural Computer (DNC)
+
+Evolucion de NTM por **Graves et al. (2016)**, publicada en **Nature**.
+
+### Mejoras sobre NTM:
+
+#### 1. Memory allocation
+Un mecanismo de "uso" que trackea que slots estan libres:
+
+$$
+u_t = (u_{t-1} + w_{t-1}^w - u_{t-1} \cdot w_{t-1}^w) \cdot (1 - f_t \cdot w_{t-1}^r)
+$$
+
+donde $f_t$ es una "free gate" que libera memoria leida.
+
+#### 2. Temporal linking
+Una **matriz de links** $L_t$ que recuerda el **orden** en que se escribio:
+
+$$
+L_t(i, j) = (1 - w_t^w(i) - w_t^w(j)) \cdot L_{t-1}(i, j) + w_t^w(i) \cdot p_{t-1}(j)
+$$
+
+Esto permite recorrer la memoria en orden temporal (forward: $f_t = L_t w_{t-1}^r$, backward: $b_t = L_t^T w_{t-1}^r$).
+
+#### 3. Multiples read heads
+El DNC puede leer de **multiples posiciones** simultaneamente, aumentando el ancho de banda.
+
+## End-to-End Memory Networks
+
+Propuestas por **Sukhbaatar et al. (2015)** en Facebook AI.
+
+Mas simple que NTM/DNC: la memoria son **embeddings** de inputs pasados y se accede por atencion standard.
+
+### Arquitectura multi-hop:
+
+$$
+p_i^1 = \text{softmax}(q^T m_i^1)
+$$
+
+$$
+o^1 = \sum_i p_i^1 c_i^1
+$$
+
+$$
+q^2 = q + o^1
+$$
+
+$$
+p_i^2 = \text{softmax}((q^2)^T m_i^2)
+$$
+
+Cada "hop" refina la query y lee informacion diferente. Es la precursora de **multi-head attention** en Transformers.
+
+## Relational Memory Core (RMC)
+
+De **Santoro et al. (2018)**, DeepMind.
+
+Combina memoria externa con **self-attention** entre slots de memoria:
+
+$$
+M_t = \text{MultiHeadAttention}(M_{t-1}, [M_{t-1}; x_t])
+$$
+
+Los slots de memoria se "comunican" entre si via atencion, permitiendo razonamiento relacional.
+
+## Comparacion de Arquitecturas MANN
+
+| Propiedad | NTM | DNC | End-to-End | RMC |
+|---|---|---|---|---|
+| Memoria | Externa, R/W | Externa, R/W + alloc | Embeddings | Self-attending slots |
+| Direccionamiento | Content + location | Content + alloc + temporal | Solo content | Self-attention |
+| Temporal linking | No | Si | No | Implicito |
+| Memory allocation | No | Si (uso tracking) | N/A | Fijo |
+| Complejidad | Media | Alta | Baja | Media |
+| Entrenamiento | Inestable | Inestable | Estable | Estable |
+| Publicacion | 2014 | 2016 (Nature) | 2015 | 2018 |
+
+## Limitaciones Teoricas
+
+1. **Entrenamiento inestable**: Los mecanismos de R/W diferenciables son dificiles de optimizar — gradientes pueden explotar o desvanecerse a traves de la memoria
+2. **Escalabilidad**: Leer/escribir de $N$ slots es $O(N)$ por operacion. Para memorias grandes (millones de slots) esto es prohibitivo
+3. **Olvido catastrofico**: La memoria se puede sobrescribir sin control fino
+4. **Sparse access**: No resuelto en NTM/DNC — siempre se lee de toda la memoria (soft attention)
+5. **No probado a escala LLM**: La mayor limitacion practica

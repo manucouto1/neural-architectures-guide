@@ -1,0 +1,188 @@
+---
+title: "Liquid Neural Networks - Frameworks"
+description: "Librerias y herramientas para implementar Liquid Neural Networks"
+---
+
+# Liquid Neural Networks - Frameworks y Librerias
+
+## Implementacion Oficial: ncps
+
+### Neural Circuit Policies (ncps)
+- **Repo**: https://github.com/mlech26l/ncps
+- **Backends**: PyTorch y TensorFlow/Keras
+- **Mantenido por**: Los autores originales (Lechner, Hasani)
+- **Instalacion**: `pip install ncps`
+
+```python
+# Ejemplo basico con PyTorch
+import torch
+from ncps.torch import CfC, LTC
+from ncps.wirings import AutoNCP
+
+# Definir la topologia de conexiones
+wiring = AutoNCP(units=64, output_size=10)
+
+# Crear modelo CfC (closed-form, mas rapido)
+model = CfC(input_size=32, units=wiring)
+
+# O crear modelo LTC (ODE-based, mas expresivo)
+model_ltc = LTC(input_size=32, units=wiring)
+
+# Forward pass
+x = torch.randn(8, 100, 32)  # (batch, seq_len, features)
+output, hidden = model(x)
+print(output.shape)  # (8, 100, 10)
+```
+
+### Wirings disponibles
+
+```python
+from ncps.wirings import AutoNCP, NCP, FullyConnected
+
+# AutoNCP: topologia automatica (recomendado para empezar)
+wiring = AutoNCP(units=128, output_size=10)
+
+# NCP: control fino sobre la topologia
+wiring = NCP(
+    inter_neurons=64,      # neuronas intermedias
+    command_neurons=32,    # neuronas de decision
+    motor_neurons=10,      # neuronas de salida
+    sensory_fanout=4,      # conexiones por neurona sensorial
+    inter_fanout=4,        # conexiones entre interneuronas
+    recurrent_command_synapses=4,  # sinapsis recurrentes
+    motor_fanin=4          # conexiones hacia motoras
+)
+
+# FullyConnected: todas conectadas (mas expresivo, menos eficiente)
+wiring = FullyConnected(units=128, output_size=10)
+```
+
+### CfC vs LTC: cuando usar cada uno
+
+| Caracteristica | CfC | LTC |
+|---|---|---|
+| Velocidad | Rapido (closed-form) | Lento (solver ODE) |
+| Expresividad | Alta | Muy alta |
+| Estabilidad | Muy estable | Puede ser inestable |
+| Uso recomendado | **Por defecto** | Cuando CfC no basta |
+
+## Frameworks Complementarios
+
+### torchdiffeq
+Para implementar LTCs desde cero con solvers ODE personalizados.
+- **Repo**: https://github.com/rtqichen/torchdiffeq
+- **Instalacion**: `pip install torchdiffeq`
+
+```python
+from torchdiffeq import odeint
+
+class LiquidDynamics(torch.nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, hidden_dim),
+            torch.nn.Tanh()
+        )
+        self.tau_base = torch.nn.Parameter(torch.ones(hidden_dim))
+    
+    def forward(self, t, x):
+        tau = self.tau_base + torch.sigmoid(self.net(x))
+        dxdt = (-x + self.net(x)) / tau
+        return dxdt
+
+dynamics = LiquidDynamics(64)
+t_span = torch.linspace(0, 1, 10)
+x0 = torch.randn(8, 64)
+trajectory = odeint(dynamics, x0, t_span)  # (10, 8, 64)
+```
+
+### DiffEqFlux.jl (Julia)
+Para implementaciones de alta performance.
+- **Repo**: https://github.com/SciML/DiffEqFlux.jl
+- **Ventaja**: Ecosistema SciML tiene los mejores solvers ODE del mundo
+
+```julia
+using DiffEqFlux, OrdinaryDiffEq, Flux
+
+# Definir dinamica liquida
+dudt = Chain(Dense(64, 64, tanh), Dense(64, 64))
+tspan = (0.0f0, 1.0f0)
+
+# Neural ODE con solver adaptativo
+node = NeuralODE(dudt, tspan, Tsit5(), saveat=0.1)
+
+# Forward pass
+x0 = randn(Float32, 64, 8)  # (features, batch)
+result = node(x0)
+```
+
+## Ejemplo Completo: Modelo Liquid para Series Temporales
+
+```python
+import torch
+import torch.nn as nn
+from ncps.torch import CfC
+from ncps.wirings import AutoNCP
+from torch.utils.data import DataLoader, TensorDataset
+
+class LiquidModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.encoder = nn.Linear(input_dim, hidden_dim)
+        wiring = AutoNCP(units=hidden_dim, output_size=output_dim)
+        self.liquid = CfC(hidden_dim, units=wiring, batch_first=True)
+    
+    def forward(self, x):
+        x = self.encoder(x)
+        output, _ = self.liquid(x)
+        return output[:, -1, :]  # ultimo paso temporal
+
+# Crear datos sinteticos
+seq_len, input_dim, output_dim = 200, 10, 1
+X = torch.randn(1000, seq_len, input_dim)
+y = torch.sin(X[:, -1, 0:1])  # target simple
+
+dataset = TensorDataset(X, y)
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+# Entrenar
+model = LiquidModel(input_dim=10, hidden_dim=64, output_dim=1)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+criterion = nn.MSELoss()
+
+for epoch in range(50):
+    total_loss = 0
+    for batch_x, batch_y in loader:
+        optimizer.zero_grad()
+        pred = model(batch_x)
+        loss = criterion(pred, batch_y)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    if epoch % 10 == 0:
+        print(f"Epoch {epoch}: loss = {total_loss/len(loader):.4f}")
+```
+
+## Hardware y Optimizacion
+
+### GPUs
+- Las LNNs son **mas eficientes en memoria** que transformers
+- CfC en particular es muy amigable con GPU (no necesita solver ODE)
+- Se pueden paralelizar por batch facilmente
+- Limitacion: la dimension temporal es inherentemente secuencial
+
+### Hardware Neuromorfico (futuro)
+- **Intel Loihi 2**: Soporta dinamicas continuas tipo liquid
+- **BrainChip Akida**: Potencial para ejecutar LTCs en edge
+- **SynSense**: Chips analogicos que implementan ODEs en hardware
+- Todavia experimental para LNNs pero la direccion es clara
+
+## Tips Practicos
+
+1. **Empieza con CfC** — mas rapido, mas estable, suficiente para la mayoria de tareas
+2. **AutoNCP es suficiente** para empezar — no optimices la topologia prematuramente
+3. **No necesitas muchas neuronas** — 64-256 suele bastar (la eficiencia es una ventaja real)
+4. **Learning rate**: `1e-3` a `1e-4` funciona bien con Adam
+5. **Sequence length**: LNNs brillan con secuencias largas donde LSTMs ya fallan
+6. **Gradient clipping**: Recomendado con `max_norm=1.0` para estabilidad
+7. **Batch size**: Mas grande es mejor para estabilidad del gradiente (32-128)

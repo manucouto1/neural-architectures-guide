@@ -1,0 +1,138 @@
+---
+title: "Kolmogorov-Arnold Networks - Teoria"
+description: "Fundamentos matematicos de Kolmogorov-Arnold Networks"
+---
+
+# Kolmogorov-Arnold Networks - Fundamentos Teoricos
+
+## El Teorema de Kolmogorov-Arnold (1957)
+
+Toda funcion continua multivariable puede descomponerse como:
+
+$$
+f(x_1, x_2, ..., x_n) = \sum_{q=0}^{2n} \Phi_q\left(\sum_{p=1}^{n} \phi_{q,p}(x_p)\right)
+$$
+
+Donde:
+- $\phi_{q,p}: [0,1] \to \mathbb{R}$ son funciones **univariables** continuas (inner functions)
+- $\Phi_q: \mathbb{R} \to \mathbb{R}$ son funciones **univariables** continuas (outer functions)
+
+**Significado**: Cualquier funcion multivariable se puede expresar como composicion de funciones de **una sola variable** y sumas. No necesitas multiplicaciones multivariables.
+
+## De MLPs a KANs: El Cambio de Paradigma
+
+### MLP (Multi-Layer Perceptron):
+- Activaciones **fijas** en los **nodos** (ReLU, GELU, etc.)
+- Pesos aprendibles en las **aristas** (matrices $W$)
+
+$$
+\text{MLP}: \quad y = \sigma(Wx + b)
+$$
+
+### KAN (Kolmogorov-Arnold Network):
+- **Sin activaciones fijas** en los nodos (solo sumas)
+- Funciones **aprendibles** en las **aristas** (B-splines)
+
+$$
+\text{KAN}: \quad y = \sum_i \phi_i(x_i)
+$$
+
+donde cada $\phi_i$ es una B-spline con parametros aprendibles.
+
+### Comparacion visual:
+
+| Aspecto | MLP | KAN |
+|---|---|---|
+| Donde esta la "inteligencia" | Pesos (matrices) | Funciones en aristas |
+| Activacion | Fija (ReLU, GELU) | **Aprendida** (B-spline) |
+| Nodos | Activacion no lineal | Solo suma |
+| Parametros por arista | 1 (peso escalar) | G+k (coeficientes de spline) |
+| Interpretabilidad | Baja | **Alta** (puedes ver las funciones) |
+
+## B-Splines como Funciones Aprendibles
+
+Cada arista tiene una funcion $\phi$ parametrizada como B-spline:
+
+$$
+\phi(x) = w_b \cdot b(x) + w_s \cdot \text{spline}(x)
+$$
+
+donde:
+- $b(x) = \text{SiLU}(x) = x / (1 + e^{-x})$ (componente base)
+- $\text{spline}(x) = \sum_{i} c_i B_i(x)$ (combinacion de B-splines de orden $k$)
+- $c_i$ son los **coeficientes aprendibles**
+- $G$ = numero de puntos del grid
+- $k$ = orden del spline (tipicamente 3)
+
+**Parametros por arista**: $G + k$ coeficientes de spline + 2 pesos ($w_b$, $w_s$).
+
+## Arquitectura de una Capa KAN
+
+Una capa KAN con $n_{in}$ entradas y $n_{out}$ salidas tiene una **matriz de funciones**:
+
+$$
+\Phi = \begin{pmatrix} \phi_{1,1} & \phi_{1,2} & \cdots & \phi_{1,n_{in}} \\ \phi_{2,1} & \phi_{2,2} & \cdots & \phi_{2,n_{in}} \\ \vdots & & & \vdots \\ \phi_{n_{out},1} & \phi_{n_{out},2} & \cdots & \phi_{n_{out},n_{in}} \end{pmatrix}
+$$
+
+Para la salida $j$:
+
+$$
+y_j = \sum_{i=1}^{n_{in}} \phi_{j,i}(x_i)
+$$
+
+No hay bias ni activacion de nodo — toda la no-linealidad esta en las $\phi$.
+
+## Grid Extension: Refinamiento Progresivo
+
+Una tecnica unica de KANs: **refinar las B-splines** durante el entrenamiento.
+
+1. Empezar con un grid grueso ($G=3$, pocos puntos)
+2. Entrenar hasta convergencia
+3. **Extender el grid** ($G=5, 10, 20...$) manteniendo la funcion aprendida
+4. Repetir
+
+$$
+\text{Grid}_{k+1} = \text{refine}(\text{Grid}_k) \quad \text{tal que} \quad \phi_{k+1} \approx \phi_k
+$$
+
+Esto da un entrenamiento **coarse-to-fine** que es mas estable y eficiente.
+
+## Scaling Laws: KANs vs MLPs
+
+Para funciones suaves de $k$ dimensiones con derivadas de orden $r$:
+
+**MLP** (con $N$ parametros):
+
+$$
+\text{Error}_{\text{MLP}} \sim N^{-\frac{2r}{2r+k}} \quad \text{(curse of dimensionality)}
+$$
+
+**KAN** (con $N$ parametros):
+
+$$
+\text{Error}_{\text{KAN}} \sim N^{-\frac{2r}{2r+1}} \quad \text{(solo depende de r, no de k!)}
+$$
+
+**Implicacion**: KANs escalan mucho mejor que MLPs para funciones de alta dimension, **siempre que sean suaves**. Para funciones no suaves, la ventaja desaparece.
+
+## Interpretabilidad
+
+Puedes visualizar **que funcion aprende cada arista**:
+
+```
+Input x1 ──[φ₁₁ = sin(x)]──→ Nodo 1
+Input x2 ──[φ₁₂ = x²]──────→ Nodo 1 → Suma → ...
+```
+
+Si entrenas un KAN para aproximar $f(x_1, x_2) = \sin(x_1) + x_2^2$, las funciones aprendidas seran literalmente `sin` y `x²`. Puedes **leerlas**.
+
+Esto no es posible con MLPs donde el conocimiento esta distribuido en miles de pesos.
+
+## Limitaciones Teoricas
+
+1. **Velocidad**: B-splines son mas costosas que multiplicacion matricial (no tan optimizadas en GPU)
+2. **Escala**: No hay evidencia de que funcionen a escala de billones de parametros
+3. **Funciones no suaves**: La ventaja teorica asume funciones suaves; datos ruidosos pierden ventaja
+4. **Memoria**: Mas parametros por "conexion" que un MLP ($G+k$ vs 1)
+5. **Entrenamiento**: Mas lento que MLPs por la evaluacion de B-splines
+6. **Composicionalidad**: El teorema K-A es para funciones continuas en $[0,1]^n$ — extenderlo a espacios mas generales no es trivial

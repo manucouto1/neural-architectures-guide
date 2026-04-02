@@ -1,0 +1,123 @@
+---
+title: "Transformers con Memoria - Papers"
+description: "Papers sobre Transformers con memoria persistente"
+---
+
+# Transformers con Memoria - Papers
+
+## Papers Fundamentales
+
+### "Improving Language Models by Retrieving from Trillions of Tokens" (RETRO)
+- **Autores**: Sebastian Borgeaud, Arthur Mensch, Jordan Hoffmann, et al.
+- **Año**: 2022
+- **Venue**: ICML 2022
+- **Link**: https://arxiv.org/abs/2112.04426
+- **Contribucion**: Modelo 7B + base de datos de 2T tokens que iguala un modelo de 25B sin retrieval. Introduce chunked cross-attention para integrar informacion recuperada. Demuestra que retrieval es un multiplicador de capacidad enorme.
+
+### "Memorizing Transformers"
+- **Autores**: Yuhuai Wu, Markus N. Rabe, DeLesley Hutchins, Christian Szegedy
+- **Año**: 2022
+- **Venue**: ICLR 2022
+- **Link**: https://arxiv.org/abs/2203.08913
+- **Contribucion**: Extiende attention con kNN sobre KV-cache externo. Mejora significativa en perplexity sin coste computacional proporcional. Concepto simple pero muy efectivo.
+
+### "LongNet: Scaling Transformers to 1,000,000,000 Tokens"
+- **Autores**: Jiayu Ding, Shuming Ma, et al.
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2307.02486
+- **Contribucion**: Dilated attention que escala a secuencias de 1B tokens. Diferentes dilation rates capturan dependencias a diferentes escalas. Computacionalmente eficiente.
+
+### "Compressive Transformers for Long-Range Sequence Modelling"
+- **Autores**: Jack W. Rae, Anna Potapenko, Siddhant M. Jayakumar, Timothy P. Lillicrap
+- **Año**: 2020
+- **Venue**: ICLR 2020
+- **Link**: https://arxiv.org/abs/1911.05507
+- **Contribucion**: Precursora de Infini-attention. Los tokens que salen de la ventana de atencion se comprimen (en vez de descartarse) en una memoria comprimida accesible por attention. Primera formulacion de "memoria compresiva" en Transformers.
+
+### "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness"
+- **Autores**: Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, Christopher Re
+- **Año**: 2022
+- **Venue**: NeurIPS 2022
+- **Link**: https://arxiv.org/abs/2205.14135
+- **Contribucion**: Optimizacion de IO que reduce memoria de attention de $O(n^2)$ a $O(n)$ sin aproximacion. Fundamental para hacer contextos largos viables. Sin este paper, los modelos de 128K+ contexto no existirian.
+
+## Papers Recientes (2024-2025)
+
+### "Leave No Context Behind: Efficient Infinite Context Transformers with Infini-attention"
+- **Autores**: Tsendsuren Munkhdalai, Manaal Faruqui, Siddharth Gopal
+- **Año**: 2024
+- **Venue**: Google
+- **Link**: https://arxiv.org/abs/2404.07143
+- **Contribucion**: Combina attention estandar + memoria compresiva lineal en la misma capa. La memoria tiene tamano fijo independiente de la longitud. Permite procesamiento de contextos "infinitos" teoricamente. Demostrado en modelos de 1B y 8B.
+
+### "Memory Layers at Scale"
+- **Autores**: Vincent-Pierre Berges et al.
+- **Año**: 2024
+- **Venue**: Meta
+- **Link**: https://arxiv.org/abs/2412.09764
+- **Contribucion**: Capas con millones de pares KV aprendibles. Product key retrieval para acceso eficiente. Mejora significativa en tareas de conocimiento factual. Escalado hasta modelos de 8B+ parametros. La "base de datos interna diferenciable" que los LLMs necesitan.
+
+### "Ring Attention with Blockwise Transformers for Near-Infinite Context"
+- **Autores**: Hao Liu, Matei Zaharia, Pieter Abbeel
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2310.01889
+- **Contribucion**: Distribuye la secuencia en "anillo" entre multiples GPUs, cada una procesa un bloque y pasa KV al siguiente. Permite contextos limitados solo por el numero de GPUs, no por memoria.
+
+### "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning"
+- **Autores**: Tri Dao
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2307.08691
+- **Contribucion**: 2x mas rapido que FlashAttention-1 con mejor paralelismo. Soporte para GQA (Grouped Query Attention). Estandar de la industria.
+
+### "LongRoPE: Extending LLM Context Window Beyond 2 Million Tokens"
+- **Autores**: Microsoft
+- **Año**: 2024
+- **Link**: https://arxiv.org/abs/2402.13753
+- **Contribucion**: Extension progresiva de RoPE hasta 2M tokens mediante busqueda de factores de escalado optimos para cada dimension de frecuencia.
+
+### "YaRN: Efficient Context Window Extension of Large Language Models"
+- **Autores**: Bowen Peng, Jeffrey Quesnelle, et al.
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2309.00071
+- **Contribucion**: Metodo para extender el contexto de modelos existentes con minimo fine-tuning. Combina NTK-aware interpolation con attention scaling. Ampliamente adoptado.
+
+### "Landmark Attention: Random-Access Infinite Context Length for Transformers"
+- **Autores**: Amirkeivan Mohtashami, Martin Jaggi
+- **Año**: 2023
+- **Link**: https://arxiv.org/abs/2305.16300
+- **Contribucion**: Tokens "landmark" que resumen bloques de contexto, permitiendo acceso random-access a posiciones arbitrarias sin costo cuadratico.
+
+### "Block-Recurrent Transformers"
+- **Autores**: DeepMind
+- **Año**: 2022
+- **Link**: https://arxiv.org/abs/2203.07852
+- **Contribucion**: Recurrencia entre bloques de Transformer, permitiendo contexto teoricamente infinito con attention solo dentro de cada bloque.
+
+## Aplicacion en Produccion
+
+### Modelos Comerciales con Contexto Extendido
+
+| Modelo | Contexto | Tecnica probable |
+|---|---|---|
+| Gemini 1.5 Pro | 1M-10M tokens | Ring Attention + compresion |
+| Claude 3.5 | 200K tokens | FlashAttention + RoPE ext |
+| GPT-4 Turbo | 128K tokens | FlashAttention + RoPE ext |
+| Llama 3.1 | 128K tokens | YaRN + FlashAttention-2 |
+| Qwen 2.5 | 128K-1M tokens | YaRN + optimizaciones |
+
+## Mapa de Lectura
+
+```
+FlashAttention (Dao 2022) ← prerequisito de todo
+    ↓
+Compressive Transformers (Rae 2020) ← idea de comprimir
+    ↓
+RETRO (Borgeaud 2022) ← retrieval
+Memorizing Transformers (Wu 2022) ← kNN memory
+    ↓
+YaRN (2023) / LongRoPE (2024) ← extension posicional
+Ring Attention (Liu 2023) ← distribuido
+    ↓
+Infini-attention (Google 2024) ← memoria compresiva
+Memory Layers (Meta 2024) ← memoria aprendida
+```

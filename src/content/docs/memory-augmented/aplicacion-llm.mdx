@@ -1,0 +1,165 @@
+---
+title: "Memory-Augmented Networks - Aplicacion a LLMs"
+description: "Como aplicar MANNs para LLMs de nueva generacion"
+---
+
+# Memory-Augmented Networks - Aplicacion a LLMs
+
+## El Insight Clave
+
+Los LLMs actuales **mezclan todo en dos lugares**:
+- **Pesos** = conocimiento del mundo (estatico)
+- **Contexto** = memoria de trabajo (limitado, efimero)
+
+Las MANNs proponen lo que falta: una **memoria explicita, direccionable y persistente**, separada de ambos.
+
+$$
+\text{LLM actual} = f_\theta(\text{contexto})
+$$
+
+$$
+\text{LLM + MANN} = f_\theta(\text{contexto}, \underbrace{M}_{\text{memoria externa}})
+$$
+
+## Que aportan las MANNs a los LLMs
+
+| Aporte | Descripcion | Comparado con RAG |
+|---|---|---|
+| **Escritura aprendida** | El modelo decide que guardar | RAG: indexa todo |
+| **Lectura diferenciable** | End-to-end, optimizable | RAG: retrieval heuristico |
+| **Persistencia** | Memoria entre sesiones | RAG: tambien persiste |
+| **Composicionalidad** | Puede combinar memorias leidas | RAG: concatena documentos |
+| **Borrado selectivo** | Olvido controlado | RAG: no borra |
+
+## MANN vs RAG: Comparacion Directa
+
+| Dimension | RAG | MANN |
+|---|---|---|
+| Almacenamiento | Vector DB externo | Matriz diferenciable |
+| Escritura | Indexacion heuristica | El modelo aprende a escribir |
+| Lectura | kNN + reranking | Soft attention / content addressing |
+| Entrenamiento | Pipeline separado | End-to-end |
+| Escalabilidad | Muy buena (FAISS, etc.) | Limitada (soft attention) |
+| Latencia | Alta (red + DB query) | Baja (en GPU) |
+| Calidad | Depende del retriever | Potencialmente mejor (optimizable) |
+| Madurez | Alta (produccion) | Baja (investigacion) |
+
+**Conclusion**: RAG funciona hoy pero no es optimizable end-to-end. MANNs son mas elegantes pero no escalan (aun).
+
+## Integracion con Transformers: Arquitecturas Concretas
+
+### Opcion A: MANN como modulo de memoria episodica
+
+```
+[Transformer block]
+       ↓
+[MANN Read: query = hidden state, buscar en memoria]
+       ↓
+[Combinar: hidden state + lectura de memoria]
+       ↓
+[MANN Write: guardar informacion relevante]
+       ↓
+[Siguiente Transformer block]
+```
+
+Cada N capas (ej: cada 4), insertar un modulo MANN.
+
+### Opcion B: Memoria como "KV-cache persistente"
+
+En vez de KV-cache que crece con el contexto y se borra entre sesiones:
+
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
+
+Extender K y V con slots de memoria persistente:
+
+$$
+K_{\text{ext}} = [K_{\text{contexto}} ; K_{\text{memoria}}]
+$$
+
+$$
+V_{\text{ext}} = [V_{\text{contexto}} ; V_{\text{memoria}}]
+$$
+
+Los slots de memoria persisten entre conversaciones y se actualizan por aprendizaje.
+
+### Opcion C: Memoria a dos niveles
+
+```
+Nivel 1: Buffer rapido (MANN pequena, en GPU)
+         - 1024 slots, actualizacion por token
+         - Para informacion de la conversacion actual
+
+Nivel 2: Almacen persistente (FAISS/vector DB)
+         - Millones de entradas
+         - Para conocimiento a largo plazo
+         - Acceso via kNN (tipo Memorizing Transformers)
+```
+
+## Propuesta Concreta: LLM 7B con MANN
+
+### Especificaciones
+
+| Componente | Configuracion |
+|---|---|
+| Backbone | 24 capas Transformer/SSM hibrido |
+| MANN module | Insertado cada 8 capas (3 modulos total) |
+| Memoria rapida | 1024 slots x 256 dims por modulo |
+| Memoria persistente | 1M entradas en FAISS |
+| Read heads | 4 por modulo |
+| Write heads | 1 por modulo |
+| Overhead parametros | ~50M adicionales |
+| Overhead VRAM | ~500MB adicionales |
+
+### Flujo de inferencia:
+
+```
+Token "Paris es la capital de Francia"
+
+Paso 1: Transformer layers 1-8 procesan normalmente
+Paso 2: MANN modulo 1 lee memoria → no encuentra nada relevante
+Paso 3: MANN modulo 1 escribe → almacena (Paris, capital, Francia)
+...
+Token "Cual es la capital de Francia?"
+
+Paso 1: Transformer layers 1-8 procesan
+Paso 2: MANN modulo 1 lee → recupera (Paris, capital, Francia)
+Paso 3: Combina con hidden state → refuerza respuesta "Paris"
+```
+
+## Desafios y Soluciones
+
+| Desafio | Severidad | Solucion propuesta |
+|---|---|---|
+| Soft attention sobre toda la memoria: $O(N)$ | Alta | Sparse access (top-k) o LSH |
+| Entrenamiento inestable | Alta | Gradient clipping + warmup de memoria |
+| Que guardar y que no | Media | Gate aprendible de escritura |
+| Memoria crece indefinidamente | Media | Eviction policy aprendible |
+| Latencia de acceso a memoria grande | Media | Nivel 1 en GPU + Nivel 2 en RAM |
+| Consistencia de memoria (contradiciones) | Baja | Self-attention entre slots |
+
+## Tabla de Viabilidad
+
+| Dimension | Estado | Nota |
+|---|---|---|
+| Base teorica | Excelente | NTM/DNC bien fundamentados |
+| Implementacion | Media | Existen pero no a escala LLM |
+| Resultados en NLP | Prometedores | Memorizing Transformers, MemoryLLM |
+| Escalabilidad | El reto principal | Soft attention no escala a millones |
+| Separacion computo/memoria | Si | La propuesta de valor fundamental |
+| Persistencia entre sesiones | Si | Exactamente lo que los LLMs necesitan |
+| Integracion con Transformers | Factible | Como modulo adicional |
+| Timeline | 1-3 años | Algunas variantes ya en uso |
+
+## Veredicto
+
+Las MANNs ofrecen la **separacion conceptualmente correcta** entre computacion y memoria. El problema es la escalabilidad. Pero:
+
+1. **Memorizing Transformers** ya demostro que kNN sobre KV externo funciona
+2. **Memory Layers at Scale** (Meta) demostro que millones de pares KV aprendibles escalan
+3. **MemoryLLM** demostro auto-actualizacion de memoria
+
+La convergencia de estos trabajos sugiere que los LLMs del futuro **tendran memoria explicita tipo MANN**, aunque probablemente no exactamente en la forma de NTM/DNC, sino en variantes optimizadas para Transformers.
+
+> Si estas construyendo un LLM de nueva generacion, **implementa memoria episodica explícita**. No como NTM clasica, sino como una combinacion de KV-cache persistente + retrieval diferenciable + gate de escritura aprendible. Es probablemente el componente mas impactante que puedes añadir.

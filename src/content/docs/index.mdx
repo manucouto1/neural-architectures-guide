@@ -1,0 +1,46 @@
+---
+title: Neural Architectures para LLMs
+description: Guia profunda sobre arquitecturas neuronales para construir LLMs de nueva generacion
+template: splash
+hero:
+  tagline: Teoria, frameworks, papers y aplicacion practica de las arquitecturas que definiran el futuro de los LLMs
+  actions:
+    - text: Empezar
+      link: /intro/vision-general/
+      icon: right-arrow
+      variant: primary
+    - text: Ir al Roadmap
+      link: /sintesis/roadmap/
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## 8 Arquitecturas, 4 Dimensiones Cada Una
+
+<CardGrid stagger>
+  <Card title="Liquid Neural Networks" icon="heart">
+    Estado interno continuo gobernado por ODEs. Memoria implicita en la dinamica temporal.
+  </Card>
+  <Card title="Neural ODEs" icon="random">
+    Redes como ecuaciones diferenciales. Profundidad adaptativa y generacion por flow matching.
+  </Card>
+  <Card title="Spiking Neural Networks" icon="star">
+    Computacion event-driven. Eficiencia energetica extrema para inferencia en edge.
+  </Card>
+  <Card title="Kolmogorov-Arnold Networks" icon="puzzle">
+    Funciones aprendibles en las aristas. Interpretabilidad y eficiencia de parametros.
+  </Card>
+  <Card title="Memory-Augmented Networks" icon="document">
+    Memoria externa explicita. Separacion real entre computacion y almacenamiento.
+  </Card>
+  <Card title="RWKV / Mamba / SSMs" icon="rocket">
+    El reemplazo de Transformers. Complejidad lineal, estado recurrente, ya funcionan como LLMs.
+  </Card>
+  <Card title="Transformers con Memoria" icon="open-book">
+    Contexto extendido, retrieval, memoria compresiva. Ya en produccion.
+  </Card>
+  <Card title="Fast Weights / Hebbian" icon="approve-check">
+    Pesos que cambian durante inferencia. Probablemente el futuro de los LLMs.
+  </Card>
+</CardGrid>
